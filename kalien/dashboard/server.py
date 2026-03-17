@@ -51,6 +51,18 @@ def _load_html() -> str:
     return _HTML_PAGE_PATH.read_text(encoding="utf-8")
 
 
+def _read_log_tail(log_path: Path, lines: int = 100) -> dict[str, Any]:
+    """Read the last N lines of the runner log."""
+    try:
+        if log_path.exists():
+            text = log_path.read_text(errors="replace")
+            all_lines = text.strip().split("\n")
+            return {"lines": all_lines[-lines:], "total": len(all_lines)}
+    except Exception:
+        pass
+    return {"lines": [], "total": 0}
+
+
 # ── Dashboard State ───────────────────────────────────────────────────
 class DashboardState:
     """Holds all mutable state shared across the dashboard threads."""
@@ -117,6 +129,8 @@ class Handler(BaseHTTPRequestHandler):
                     st.paths.config,
                 )
             )
+        elif self.path == "/api/log":
+            self._json(_read_log_tail(st.paths.log))
         else:
             self.send_error(404)
 
