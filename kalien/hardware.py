@@ -122,11 +122,16 @@ def run_benchmark(
             current_frame = 0
             for raw in proc.stdout:  # type: ignore[union-attr]
                 line = raw.decode("utf-8", errors="replace")
-                sys.stdout.write(line)
-                sys.stdout.flush()
-                # Write to log file too
+                try:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    pass
                 if log_fh:
-                    log_fh.write(line)
+                    try:
+                        log_fh.write(line)
+                    except (UnicodeEncodeError, UnicodeDecodeError):
+                        pass
                 m = re.search(r"frame=(\d+)", line)
                 if m:
                     current_frame = int(m.group(1))

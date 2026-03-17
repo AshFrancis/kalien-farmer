@@ -57,7 +57,7 @@ def run_one_salt(
     if hw.mode == "cpu":
         cmd += ["--threads", str(threads)]
     try:
-        with open(log_file, "w") as lf:
+        with open(log_file, "w", encoding="utf-8", errors="replace") as lf:
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
             )
@@ -66,8 +66,11 @@ def run_one_salt(
             for raw in proc.stdout:  # type: ignore[union-attr]
                 line = raw.decode("utf-8", errors="replace")
                 lf.write(line)
-                sys.stdout.write(line)
-                sys.stdout.flush()
+                try:
+                    sys.stdout.write(line)
+                    sys.stdout.flush()
+                except (UnicodeEncodeError, UnicodeDecodeError):
+                    pass  # skip unprintable lines on Windows console
                 m = re.search(r"best=(\d+)", line)
                 if m:
                     score = int(m.group(1))
