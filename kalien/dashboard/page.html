@@ -787,27 +787,17 @@ function renderSetupHTML(s, isOverlay) {
     html += '<button class="ctrl-btn start" onclick="saveClaimant(\'' + (isOverlay?'O':'P') + '\')">SAVE</button>';
     html += '</div></div></div>';
 
-    // Step 3: Benchmark
-    html += '<div class="setup-step">';
-    html += ind(s.benchmark_done);
-    html += '<div class="setup-step-content">';
-    html += '<div class="setup-step-title">3. Benchmark &amp; Start</div>';
-    if (s.benchmark_done) {
-        html += '<div class="setup-step-detail">Benchmark complete. Click START above to begin farming.</div>';
-    } else {
-        html += '<div class="setup-step-detail">Auto-runs on first START. Calibrates beam width for your hardware (~2 min).</div>';
-    }
-    html += '</div></div>';
-
-    // Ready message or start button
-    if (ok) {
+    // Start farming button — show as soon as engine + claimant are set
+    const canStart = s.engine_found && s.settings_configured;
+    if (canStart) {
         html += '<div class="setup-ready">';
-        html += '<div class="setup-ready-msg">READY TO FARM!</div>';
-        if (isOverlay) {
-            html += '<button class="ctrl-btn start" style="font-size:14px;padding:12px 32px" onclick="dismissSetup();ctrlAction(\'start\')">START</button>';
+        if (s.benchmark_done) {
+            html += '<div class="setup-ready-msg">READY TO FARM!</div>';
         } else {
-            html += '<div class="setup-step-detail">Use the START button on the Seeds page to begin.</div>';
+            html += '<div class="setup-ready-msg">SETUP COMPLETE</div>';
+            html += '<div class="setup-step-detail" style="margin-bottom:12px">First run will benchmark your hardware (~2 min), then farming begins automatically.</div>';
         }
+        html += '<button class="ctrl-btn start" style="font-size:16px;padding:14px 40px;letter-spacing:3px" onclick="dismissSetup();ctrlAction(\'start\')">START FARMING</button>';
         html += '</div>';
     }
 

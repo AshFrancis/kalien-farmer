@@ -5,6 +5,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from typing import TYPE_CHECKING, Any
 
 from kalien.config import IS_WINDOWS, find_engine, ENGINE_SEARCH_PATHS, ensure_data_dir
@@ -13,6 +14,11 @@ from kalien.settings import is_valid_claimant, load_settings, DEFAULT_SETTINGS
 
 if TYPE_CHECKING:
     from kalien.dashboard.server import DashboardState
+
+# When running as a PyInstaller bundle, we can't spawn a separate Python
+# process. Instead we run the runner in a background thread.
+_runner_thread: threading.Thread | None = None
+_runner_thread_stopping = threading.Event()
 
 
 def find_orphan_pid() -> str | None:
@@ -42,6 +48,11 @@ def find_orphan_pid() -> str | None:
 
 def is_runner_alive(state: DashboardState) -> str | None:
     """Return the PID string of a live runner, or ``None``."""
+    global _runner_thread
+    # Check in-process thread (PyInstaller mode)
+    if _runner_thread and _runner_thread.is_alive():
+        return "thread"
+    # Check subprocess
     with state.lock:
         if state.runner_proc and state.runner_proc.poll() is None:
             return str(state.runner_proc.pid)
@@ -49,8 +60,26 @@ def is_runner_alive(state: DashboardState) -> str | None:
     return find_orphan_pid()
 
 
+def _run_in_thread(state: DashboardState, engine_path: str) -> None:
+    """Entry point for the runner when running in a background thread."""
+    from kalien.runner import main as runner_main
+    sys.argv = [
+        "runner",
+        "--dir", str(state.paths.base),
+        "--binary", engine_path,
+    ]
+    try:
+        runner_main()
+    except (SystemExit, KeyboardInterrupt):
+        pass
+    except Exception as e:
+        with open(state.paths.log, "a") as f:
+            f.write(f"Runner thread error: {e}\n")
+
+
 def action_start(state: DashboardState) -> dict[str, Any]:
-    """Start the runner subprocess."""
+    """Start the runner (as subprocess or thread depending on environment)."""
+    global _runner_thread
     engine = find_engine(state.engine_search_paths)
     if not engine:
         search = ", ".join(str(p) for p in state.engine_search_paths)
@@ -79,56 +108,76 @@ def action_start(state: DashboardState) -> dict[str, Any]:
 
     ensure_data_dir(state.paths.base)
 
-    kwargs: dict[str, Any] = {}
-    if IS_WINDOWS:
-        kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+    if getattr(sys, 'frozen', False):
+        # PyInstaller bundle: run in a thread (can't spawn separate Python)
+        _runner_thread_stopping.clear()
+        _runner_thread = threading.Thread(
+            target=_run_in_thread,
+            args=(state, str(engine)),
+            daemon=True,
+        )
+        _runner_thread.start()
+        return {"ok": True, "msg": "Started runner (in-process)"}
+    else:
+        # Normal: run as subprocess
+        kwargs: dict[str, Any] = {}
+        if IS_WINDOWS:
+            kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
 
-    log_fh = open(state.paths.log, "a")
-    try:
-        runner_cmd = [
-            sys.executable, "-m", "kalien.runner",
-            "--dir", str(state.paths.base),
-        ]
-        if engine:
-            runner_cmd += ["--binary", str(engine)]
-        with state.lock:
-            state.runner_proc = subprocess.Popen(
-                runner_cmd,
-                cwd=str(state.project_root),
-                stdout=log_fh,
-                stderr=subprocess.STDOUT,
-                **kwargs,
-            )
-        log_fh.close()
-    except Exception:
-        log_fh.close()
-        raise
-    return {"ok": True, "msg": f"Started runner (PID {state.runner_proc.pid})"}
+        log_fh = open(state.paths.log, "a")
+        try:
+            runner_cmd = [
+                sys.executable, "-m", "kalien.runner",
+                "--dir", str(state.paths.base),
+                "--binary", str(engine),
+            ]
+            with state.lock:
+                state.runner_proc = subprocess.Popen(
+                    runner_cmd,
+                    cwd=str(state.project_root),
+                    stdout=log_fh,
+                    stderr=subprocess.STDOUT,
+                    **kwargs,
+                )
+            log_fh.close()
+        except Exception:
+            log_fh.close()
+            raise
+        return {"ok": True, "msg": f"Started runner (PID {state.runner_proc.pid})"}
 
 
 def action_stop(state: DashboardState) -> dict[str, Any]:
-    """Stop the runner subprocess."""
+    """Stop the runner (subprocess or thread)."""
+    global _runner_thread
     pid = is_runner_alive(state)
     if not pid:
         return {"ok": False, "msg": "Not running"}
-    try:
-        if IS_WINDOWS:
-            subprocess.run(
-                ["taskkill", "/F", "/PID", str(pid)],
-                capture_output=True, timeout=5,
-            )
-        else:
-            os.kill(int(pid), signal.SIGTERM)
-    except Exception:
-        pass
-    with state.lock:
-        if state.runner_proc:
-            try:
-                state.runner_proc.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                state.runner_proc.kill()
-            state.runner_proc = None
-    return {"ok": True, "msg": f"Stopped runner (PID {pid})"}
+
+    if pid == "thread":
+        # Thread mode: create the pause file to signal graceful stop,
+        # then the thread will exit after the current salt
+        state.paths.pause.touch()
+        # Give it a moment, then just let it wind down
+        return {"ok": True, "msg": "Stopping runner (will finish current salt)"}
+    else:
+        try:
+            if IS_WINDOWS:
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(pid)],
+                    capture_output=True, timeout=5,
+                )
+            else:
+                os.kill(int(pid), signal.SIGTERM)
+        except Exception:
+            pass
+        with state.lock:
+            if state.runner_proc:
+                try:
+                    state.runner_proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    state.runner_proc.kill()
+                state.runner_proc = None
+        return {"ok": True, "msg": f"Stopped runner (PID {pid})"}
 
 
 def action_pause(state: DashboardState) -> dict[str, Any]:
