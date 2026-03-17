@@ -13,13 +13,25 @@ IS_WINDOWS: bool = sys.platform == "win32"
 
 _BIN_NAME: str = "kalien.exe" if IS_WINDOWS else "kalien"
 
-PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
-
-ENGINE_SEARCH_PATHS: list[Path] = [
-    PROJECT_ROOT / "engine" / _BIN_NAME,
-    PROJECT_ROOT / _BIN_NAME,
-    Path.home() / "kalien-farmer" / "engine" / _BIN_NAME,
-]
+# When running as a PyInstaller bundle, __file__ points to a temp extraction
+# directory. Use the executable's directory for user-facing paths instead.
+if getattr(sys, 'frozen', False):
+    # PyInstaller bundle: use directory containing the executable
+    PROJECT_ROOT: Path = Path(sys.executable).resolve().parent
+    # Bundled engine is inside the executable's temp dir
+    _BUNDLE_DIR: Path = Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    ENGINE_SEARCH_PATHS: list[Path] = [
+        _BUNDLE_DIR / "engine" / _BIN_NAME,
+        PROJECT_ROOT / "engine" / _BIN_NAME,
+        PROJECT_ROOT / _BIN_NAME,
+    ]
+else:
+    PROJECT_ROOT: Path = Path(__file__).resolve().parent.parent
+    ENGINE_SEARCH_PATHS: list[Path] = [
+        PROJECT_ROOT / "engine" / _BIN_NAME,
+        PROJECT_ROOT / _BIN_NAME,
+        Path.home() / "kalien-farmer" / "engine" / _BIN_NAME,
+    ]
 
 # ── Pipeline constants ────────────────────────────────────────────────
 DEFAULT_PUSH_THRESHOLD: int = 1_190_000
