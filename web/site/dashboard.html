@@ -1,0 +1,1403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KALIEN WEB FARMER</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+    --bg: #05051a;
+    --bg2: #0a0a2a;
+    --bg3: #10103a;
+    --cyan: #00ffcc;
+    --pink: #ff0066;
+    --purple: #9d4edd;
+    --yellow: #ffd000;
+    --green: #00ff66;
+    --red: #ff3344;
+    --blue: #4488ff;
+    --text: #c8c8ff;
+    --dim: #555588;
+    --border: #222255;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Share Tech Mono', monospace;
+    min-height: 100vh;
+}
+body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+    pointer-events: none;
+    z-index: 9999;
+}
+.header {
+    background: linear-gradient(180deg, var(--bg3), var(--bg));
+    border-bottom: 2px solid var(--cyan);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    box-shadow: 0 4px 30px rgba(0,255,204,0.15);
+}
+.title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 22px;
+    font-weight: 900;
+    color: var(--cyan);
+    text-shadow: 0 0 20px rgba(0,255,204,0.6), 0 0 40px rgba(0,255,204,0.3);
+    letter-spacing: 4px;
+}
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 13px;
+}
+.status-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    animation: pulse 2s infinite;
+}
+.status-dot.live { background: var(--green); box-shadow: 0 0 10px var(--green); }
+.status-dot.dead { background: var(--red); box-shadow: 0 0 10px var(--red); animation: none; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+.tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 24px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+}
+.tab {
+    padding: 10px 24px;
+    cursor: pointer;
+    color: var(--dim);
+    font-family: 'Orbitron', sans-serif;
+    font-size: 12px;
+    letter-spacing: 3px;
+    border-bottom: 2px solid transparent;
+    transition: all 0.2s;
+}
+.tab:hover { color: var(--text); }
+.tab.active {
+    color: var(--cyan);
+    border-bottom-color: var(--cyan);
+    text-shadow: 0 0 10px rgba(0,255,204,0.5);
+}
+
+.content { padding: 20px 24px; }
+.page { display: none; }
+.page.active { display: block; }
+
+.mission {
+    background: linear-gradient(135deg, var(--bg3), var(--bg2));
+    border: 1px solid var(--cyan);
+    border-radius: 6px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 0 20px rgba(0,255,204,0.1), inset 0 0 30px rgba(0,255,204,0.03);
+}
+.mission-label {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--dim);
+    margin-bottom: 8px;
+}
+.mission-main { font-size: 18px; color: var(--cyan); text-shadow: 0 0 10px rgba(0,255,204,0.4); }
+.mission-details { margin-top: 6px; color: var(--dim); font-size: 13px; }
+.mission-details span { color: var(--text); }
+
+.chart-container {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+    margin-bottom: 20px;
+    height: 220px;
+}
+.chart-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 3px;
+    color: var(--dim);
+    margin-bottom: 8px;
+}
+
+.table-wrap {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+}
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th {
+    background: var(--bg3);
+    padding: 10px 12px;
+    text-align: left;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 10px;
+    letter-spacing: 2px;
+    color: var(--dim);
+    border-bottom: 1px solid var(--border);
+    cursor: pointer;
+    user-select: none;
+}
+th:hover { color: var(--cyan); }
+td { padding: 8px 12px; border-bottom: 1px solid rgba(34,34,85,0.5); }
+tr:hover { background: rgba(0,255,204,0.03); }
+tr.running { background: rgba(0,255,204,0.06); border-left: 3px solid var(--cyan); }
+tr.expired { opacity: 0.4; }
+
+.seed-hex { font-weight: bold; color: var(--yellow); letter-spacing: 1px; }
+.score { color: var(--green); font-weight: bold; }
+.score-high { color: var(--cyan); text-shadow: 0 0 8px rgba(0,255,204,0.4); }
+.status-badge {
+    display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; letter-spacing: 1px;
+}
+.badge-running { background: rgba(0,255,204,0.15); color: var(--cyan); border: 1px solid var(--cyan); }
+.badge-completed { background: rgba(0,255,102,0.1); color: var(--green); border: 1px solid rgba(0,255,102,0.3); }
+.badge-queued { background: rgba(157,78,221,0.15); color: var(--purple); border: 1px solid rgba(157,78,221,0.3); }
+.badge-qualified { background: rgba(255,208,0,0.1); color: var(--yellow); border: 1px solid rgba(255,208,0,0.3); }
+.badge-expired { background: rgba(255,51,68,0.1); color: var(--red); border: 1px solid rgba(255,51,68,0.3); }
+.badge-none { background: rgba(85,85,136,0.1); color: var(--dim); border: 1px solid rgba(85,85,136,0.3); }
+
+.progress-bar { background: var(--bg); border-radius: 3px; height: 18px; overflow: hidden; min-width: 100px; display: flex; gap: 1px; padding: 2px; }
+.progress-block {
+    flex: 1;
+    border-radius: 1px;
+    transition: background 0.3s;
+}
+.progress-block.done { background: var(--green); box-shadow: 0 0 3px rgba(0,255,102,0.3); }
+.progress-block.current { background: var(--green); animation: blockPulse 1s infinite; }
+.progress-block.pending { background: var(--bg3); }
+@keyframes blockPulse { 0%,100%{opacity:1;box-shadow:0 0 6px var(--green)} 50%{opacity:0.4;box-shadow:none} }
+
+.spinner {
+    display: inline-block;
+    width: 14px; height: 14px;
+    border: 2px solid var(--bg3);
+    border-top-color: var(--cyan);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+    margin-right: 6px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.queue-type { font-family: 'Orbitron', sans-serif; font-size: 10px; letter-spacing: 1px; }
+.type-qualify { color: var(--blue); }
+.type-push { color: var(--pink); }
+
+.stats-bar { display: flex; gap: 24px; margin-bottom: 16px; flex-wrap: wrap; }
+.stat {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 12px 16px; min-width: 140px;
+}
+.stat-value { font-family: 'Orbitron', sans-serif; font-size: 20px; font-weight: 700; }
+.stat-label { font-size: 10px; color: var(--dim); letter-spacing: 2px; margin-top: 4px; }
+
+/* Controls */
+.controls { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ctrl-btn {
+    font-family: 'Orbitron', sans-serif; font-size: 11px; letter-spacing: 2px;
+    padding: 8px 16px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--bg2); color: var(--text); cursor: pointer; transition: all 0.2s;
+}
+.ctrl-btn:hover { border-color: var(--cyan); color: var(--cyan); box-shadow: 0 0 10px rgba(0,255,204,0.2); }
+.ctrl-btn:active { transform: scale(0.97); }
+.ctrl-btn.start { border-color: var(--green); color: var(--green); }
+.ctrl-btn.start:hover { box-shadow: 0 0 10px rgba(0,255,102,0.3); }
+.ctrl-btn.stop { border-color: var(--red); color: var(--red); }
+.ctrl-btn.stop:hover { box-shadow: 0 0 10px rgba(255,51,68,0.3); }
+.ctrl-btn.pause { border-color: var(--yellow); color: var(--yellow); }
+.ctrl-btn.pause:hover { box-shadow: 0 0 10px rgba(255,208,0,0.3); }
+.ctrl-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.runner-status { font-size: 12px; padding: 4px 10px; border-radius: 3px; }
+.runner-running { background: rgba(0,255,102,0.1); color: var(--green); border: 1px solid rgba(0,255,102,0.3); }
+.runner-stopped { background: rgba(255,51,68,0.1); color: var(--red); border: 1px solid rgba(255,51,68,0.3); }
+.runner-paused { background: rgba(255,208,0,0.1); color: var(--yellow); border: 1px solid rgba(255,208,0,0.3); }
+
+.toast {
+    position: fixed; bottom: 24px; right: 24px; padding: 12px 20px;
+    border-radius: 4px; font-size: 13px; z-index: 10000; animation: fadeIn 0.3s; max-width: 400px;
+}
+.toast-ok { background: rgba(0,255,102,0.15); color: var(--green); border: 1px solid var(--green); }
+.toast-err { background: rgba(255,51,68,0.15); color: var(--red); border: 1px solid var(--red); }
+@keyframes fadeIn { from{opacity:0;transform:translateY(10px)} to{opacity:1;transform:translateY(0)} }
+
+.modal-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(5,5,26,0.85);
+    z-index: 5000; justify-content: center; align-items: center;
+}
+.modal-overlay.active { display: flex; }
+.modal {
+    background: var(--bg3); border: 1px solid var(--cyan); border-radius: 8px;
+    padding: 24px; min-width: 380px; box-shadow: 0 0 40px rgba(0,255,204,0.2);
+}
+.modal h3 {
+    font-family: 'Orbitron', sans-serif; color: var(--cyan);
+    font-size: 14px; letter-spacing: 3px; margin-bottom: 16px;
+}
+.modal label { display: block; font-size: 11px; color: var(--dim); letter-spacing: 1px; margin-bottom: 4px; margin-top: 12px; }
+.modal input, .modal select {
+    width: 100%; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); font-family: 'Share Tech Mono', monospace; font-size: 14px;
+}
+.modal input:focus { border-color: var(--cyan); outline: none; }
+.modal-btns { display: flex; gap: 10px; margin-top: 20px; justify-content: flex-end; }
+
+a.replay-link { color: var(--cyan); text-decoration: none; font-size: 11px; }
+a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,255,204,0.4); }
+.proof-status { font-size: 10px; letter-spacing: 1px; }
+.proof-succeeded { color: var(--green); }
+.proof-running { color: var(--yellow); }
+.proof-queued { color: var(--dim); }
+.proof-failed { color: var(--red); }
+
+.footer { text-align: center; padding: 20px; color: var(--dim); font-size: 11px; letter-spacing: 2px; }
+
+/* Setup page */
+.setup-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(5,5,26,0.92);
+    z-index: 4000; justify-content: center; align-items: center;
+}
+.setup-overlay.active { display: flex; }
+.setup-box {
+    background: linear-gradient(135deg, var(--bg3), var(--bg2));
+    border: 1px solid var(--cyan); border-radius: 8px;
+    padding: 32px; min-width: 480px; max-width: 560px;
+    box-shadow: 0 0 60px rgba(0,255,204,0.2);
+}
+.setup-box h2 {
+    font-family: 'Orbitron', sans-serif; color: var(--cyan);
+    font-size: 18px; letter-spacing: 4px; margin-bottom: 8px;
+    text-shadow: 0 0 20px rgba(0,255,204,0.5);
+}
+.setup-box .setup-subtitle { color: var(--dim); font-size: 12px; margin-bottom: 24px; }
+.setup-step {
+    display: flex; align-items: flex-start; gap: 12px;
+    padding: 14px 0; border-bottom: 1px solid rgba(34,34,85,0.5);
+}
+.setup-step:last-of-type { border-bottom: none; }
+.setup-indicator {
+    width: 22px; height: 22px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items; justify-content: center;
+    font-size: 12px; font-weight: bold; margin-top: 2px;
+}
+.setup-indicator.ok { background: rgba(0,255,102,0.15); color: var(--green); border: 1px solid var(--green); }
+.setup-indicator.fail { background: rgba(255,51,68,0.15); color: var(--red); border: 1px solid var(--red); }
+.setup-step-content { flex: 1; }
+.setup-step-title { font-size: 13px; color: var(--text); margin-bottom: 4px; }
+.setup-step-detail { font-size: 11px; color: var(--dim); line-height: 1.5; }
+.setup-step-detail code {
+    background: var(--bg); padding: 2px 6px; border-radius: 3px;
+    color: var(--yellow); font-size: 11px;
+}
+.setup-input-row { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+.setup-input-row input {
+    flex: 1; padding: 7px 10px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 4px; color: var(--text); font-family: 'Share Tech Mono', monospace; font-size: 12px;
+}
+.setup-input-row input:focus { border-color: var(--cyan); outline: none; }
+.setup-ready {
+    text-align: center; padding: 20px 0 10px;
+}
+.setup-ready-msg {
+    font-family: 'Orbitron', sans-serif; font-size: 14px;
+    color: var(--green); letter-spacing: 2px; margin-bottom: 16px;
+    text-shadow: 0 0 10px rgba(0,255,102,0.4);
+}
+.setup-info { font-size: 11px; color: var(--dim); margin-top: 16px; text-align: left; }
+.setup-info span { color: var(--text); }
+</style>
+</head>
+<body>
+
+<div class="header">
+    <div class="title">KALIEN WEB FARMER</div>
+    <div class="header-right">
+        <span class="status-dot live" id="statusDot"></span>
+        <span id="statusText">LIVE</span>
+        <span id="clock" style="color:var(--dim)">--:--:--</span>
+    </div>
+</div>
+
+<div class="tabs">
+    <div class="tab active" data-page="seeds">SEEDS</div>
+    <div class="tab" data-page="tapes">TAPES</div>
+    <div class="tab" data-page="log">LOG</div>
+    <div class="tab" data-page="settings">SETTINGS</div>
+    <div class="tab" data-page="setup" id="tabSetup">SETUP</div>
+</div>
+
+<div class="content">
+    <div class="page active" id="page-seeds">
+        <div class="mission">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                <div>
+                    <div class="mission-label">CURRENT MISSION</div>
+                    <div class="mission-main" id="missionMain">IDLE</div>
+                    <div class="mission-details" id="missionDetails"></div>
+                </div>
+                <div class="controls">
+                    <span id="runnerStatus" class="runner-status runner-paused">LOADING ENGINE...</span>
+                    <button class="ctrl-btn start" id="btnStart" onclick="startFarming()" disabled>START FARMING</button>
+                    <button class="ctrl-btn stop" id="btnStop" onclick="stopFarming()" disabled>STOP</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="stats-bar" id="statsBar"></div>
+
+        <div class="chart-container">
+            <div class="chart-title">SCORE TIMELINE</div>
+            <canvas id="scoreChart"></canvas>
+        </div>
+
+        <div class="table-wrap">
+            <table>
+                <thead><tr>
+                    <th data-sort="seed">SEED</th>
+                    <th data-sort="age_min">AGE</th>
+                    <th data-sort="remaining_min">EXPIRES</th>
+                    <th data-sort="qualify_score">QUALIFY</th>
+                    <th data-sort="push_status">PUSH</th>
+                    <th>PROGRESS</th>
+                    <th data-sort="push_score">SCORE</th>
+                    <th data-sort="submitted_score">SUBMITTED</th>
+                </tr></thead>
+                <tbody id="seedsBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- TAPES PAGE -->
+    <!-- GLOBAL PAGE -->
+    <div class="page" id="page-global">
+        <div class="stats-bar">
+            <div class="stat"><div class="stat-value" style="color:var(--cyan)" id="globalUsers">0</div><div class="stat-label">FARMERS</div></div>
+            <div class="stat"><div class="stat-value" style="color:var(--green)" id="globalRuns">0</div><div class="stat-label">TOTAL RUNS</div></div>
+            <div class="stat"><div class="stat-value" style="color:var(--pink)" id="globalBest">—</div><div class="stat-label">BEST SCORE</div></div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr>
+                    <th>FARMER</th><th>SEED</th><th>SCORE</th><th>TIME</th><th>SUBMITTED</th><th>WHEN</th>
+                </tr></thead>
+                <tbody id="globalBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- TAPES PAGE -->
+    <div class="page" id="page-tapes">
+        <div class="stats-bar">
+            <div class="stat"><div class="stat-value" style="color:var(--cyan)" id="tapesCount">0</div><div class="stat-label">TOTAL TAPES</div></div>
+            <div class="stat"><div class="stat-value" style="color:var(--green)" id="tapesBest">&#x2014;</div><div class="stat-label">BEST SCORE</div></div>
+        </div>
+        <div class="table-wrap">
+            <table>
+                <thead><tr>
+                    <th>SEED</th><th>SALT</th><th>SCORE</th><th>DATE</th><th>FILE</th>
+                </tr></thead>
+                <tbody id="tapesBody"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- LOG PAGE -->
+    <div class="page" id="page-log">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+            <div style="font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:3px;color:var(--dim)">RUNNER LOG</div>
+            <div style="display:flex;gap:16px;align-items:center">
+                <button class="ctrl-btn" onclick="logLines=[];renderLog()" style="font-size:10px;padding:4px 10px">CLEAR</button>
+                <label style="font-size:12px;color:var(--dim)"><input type="checkbox" id="logAutoScroll" checked> Auto-scroll</label>
+            </div>
+        </div>
+        <div id="logContainer" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;height:calc(100vh - 220px);overflow-y:auto;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all;color:var(--text)">
+            <span style="color:var(--dim)">Waiting for log data...</span>
+        </div>
+    </div>
+
+    <!-- SETTINGS PAGE -->
+    <div class="page" id="page-settings">
+        <div style="display:flex;gap:20px;flex-wrap:wrap">
+            <div class="mission" style="flex:1;min-width:300px">
+                <div class="mission-label">CONFIGURATION</div>
+                <div style="margin-top:16px">
+                    <label style="font-size:11px;color:var(--dim);letter-spacing:1px">PUSH THRESHOLD</label>
+                    <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
+                        <input type="number" id="settingThreshold" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;width:200px">
+                        <button class="ctrl-btn start" onclick="saveSettings()">SAVE</button>
+                    </div>
+                    <div style="color:var(--dim);font-size:11px;margin-top:6px">Seeds scoring above this in qualify get a push run. Default: 1,190,000</div>
+                </div>
+                <div style="margin-top:16px">
+                    <label style="font-size:11px;color:var(--dim);letter-spacing:1px">PUSH BEAM MULTIPLIER</label>
+                    <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
+                        <select id="settingPushMultiplier" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;width:200px">
+                            <option value="0">Disabled (qualify only)</option>
+                            <option value="2">2× qualify beam</option>
+                            <option value="3">3× qualify beam</option>
+                            <option value="4" selected>4× qualify beam</option>
+                            <option value="6">6× qualify beam</option>
+                            <option value="8">8× qualify beam</option>
+                        </select>
+                    </div>
+                    <div style="color:var(--dim);font-size:11px;margin-top:6px">After qualify, run 1 push salt at this multiple of your calibrated beam width. Higher = better score but slower.</div>
+                </div>
+            </div>
+            <div class="mission" style="flex:1;min-width:300px" id="benchmarkInfo">
+                <div class="mission-label">HARDWARE &amp; BENCHMARK</div>
+                <div style="color:var(--dim);margin-top:12px">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SETUP PAGE -->
+    <div class="page" id="page-setup">
+        <div id="setupContent"></div>
+    </div>
+</div>
+
+<!-- Setup overlay (shown on first run when claimant missing) -->
+<div class="setup-overlay" id="setupOverlay">
+    <div class="setup-box" id="setupOverlayContent"></div>
+</div>
+
+<div class="footer">KALIEN BEAM SEARCH ENGINE &middot; WEB FARMER</div>
+
+<div id="toast" class="toast toast-ok" style="display:none"></div>
+
+<script>
+// ── State ────────────────────────────────────────────────────────
+let sortCol = 'seed_id', sortDir = -1;
+let chart = null;
+let _proofs = {};
+let _liveProgress = {};
+
+let worker = null;
+let wasmReady = false;
+let benchmarkData = null; // { beam, elapsed, ts, cores }
+let farming = false;
+let stopping = false;
+let currentSeed = null;
+let currentSeedId = null;
+let qualifiedSeeds = new Set();
+let wakeLock = null;
+
+let logLines = [];
+const MAX_LOG_LINES = 2000;
+
+let _missionStartTime = null;
+let _missionSeed = null;
+
+// ── API helper ───────────────────────────────────────────────────
+function api(path, opts = {}) {
+    const claimant = localStorage.getItem('kalien_claimant') || '';
+    opts.headers = { ...opts.headers, 'X-Claimant': claimant };
+    return fetch(path, opts).then(r => r.json());
+}
+
+// ── Tabs ─────────────────────────────────────────────────────────
+function showPage(pageName) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const tab = document.querySelector('.tab[data-page="' + pageName + '"]');
+    if (tab) tab.classList.add('active');
+    const page = document.getElementById('page-' + pageName);
+    if (page) page.classList.add('active');
+}
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => showPage(tab.dataset.page));
+});
+// Hash routing for hidden pages (e.g. #global)
+function checkHash() {
+    const page = location.hash.slice(1);
+    if (page && document.getElementById('page-' + page)) {
+        showPage(page);
+        if (page === 'global' && typeof refreshGlobal === 'function') refreshGlobal();
+    }
+}
+setTimeout(checkHash, 100);
+window.addEventListener('hashchange', checkHash);
+document.querySelectorAll('th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+        const col = th.dataset.sort;
+        if (sortCol === col) sortDir *= -1;
+        else { sortCol = col; sortDir = -1; }
+        refresh();
+    });
+});
+
+// ── Formatters ───────────────────────────────────────────────────
+function fmtDuration(min) {
+    if (min < 0) return 'EXPIRED';
+    if (min < 60) return Math.floor(min) + 'm';
+    if (min < 1440) return Math.floor(min/60) + 'h' + Math.floor(min%60) + 'm';
+    return Math.floor(min/1440) + 'd' + Math.floor((min%1440)/60) + 'h';
+}
+function fmtScore(n) { return n ? n.toLocaleString() : '\u2014'; }
+function fmtScoreK(n) { return n ? Math.floor(n/1000).toLocaleString() + 'K' : '\u2014'; }
+
+// ── Render Seeds ─────────────────────────────────────────────────
+function renderSeeds(seeds) {
+    seeds.sort((a, b) => {
+        let av = a[sortCol], bv = b[sortCol];
+        if (typeof av === 'string') return sortDir * av.localeCompare(bv);
+        return sortDir * ((av||0) - (bv||0));
+    });
+    document.getElementById('seedsBody').innerHTML = seeds.map(s => {
+        const expired = s.remaining_min < 0;
+        const cls = s.is_running ? 'running' : (expired ? 'expired' : '');
+        let badge = '';
+        if (s.is_running) badge = `<span class="status-badge badge-running">\u25b6 ${s.run_phase}</span>`;
+        else if (s.push_status==='completed') badge = '<span class="status-badge badge-completed">DONE</span>';
+        else if (s.push_status==='queued') badge = `<span class="status-badge badge-queued">QUEUE #${s.queue_pos||'?'}</span>`;
+        else if (s.push_status==='expired') badge = '<span class="status-badge badge-expired">EXPIRED</span>';
+        else if (s.qualify_score > 1190000) badge = '<span class="status-badge badge-qualified">QUALIFIED</span>';
+        else badge = '<span class="status-badge badge-none">\u2014</span>';
+        let prog = '';
+        function makeBlocks(done, total, isLive, partialPct) {
+            const n = Math.min(total, 30);
+            const scale = total / n;
+            let html = '<div class="progress-bar">';
+            for (let i = 0; i < n; i++) {
+                const blockIdx = Math.floor(i * scale);
+                if (blockIdx < done) {
+                    html += '<div class="progress-block done"></div>';
+                } else if (isLive && blockIdx === done && partialPct > 0) {
+                    html += `<div class="progress-block current" style="background:linear-gradient(90deg, var(--green) ${partialPct}%, var(--bg3) ${partialPct}%)"></div>`;
+                } else {
+                    html += '<div class="progress-block pending"></div>';
+                }
+            }
+            return html + '</div>';
+        }
+        if (s.is_running) {
+            const pr = _liveProgress || {};
+            const saltsDone = pr.salt || 0;
+            const saltsTotal = pr.salt_total || s.run_salt_end || 1;
+            const framePct = (pr.frame && pr.total_frames) ? Math.floor((pr.frame / pr.total_frames) * 100) : 0;
+            prog = makeBlocks(saltsDone, saltsTotal, true, framePct);
+        } else if (s.push_status==='completed') {
+            prog = makeBlocks(s.push_salts_total, s.push_salts_total, false, 0);
+        } else if (s.push_salts_total > 0) {
+            prog = makeBlocks(s.push_salts_done, s.push_salts_total, false, 0);
+        }
+        const best = Math.max(s.qualify_score||0, s.push_score||0, s.run_best||0);
+        const sc = best >= 1200000 ? 'score-high' : 'score';
+
+        let submitted = '';
+        if (s.submitted_job_id) {
+            const proof = _proofs[s.seed] || {};
+            const pstatus = proof.status || 'queued';
+            const pcls = pstatus === 'succeeded' ? 'proof-succeeded' : pstatus.includes('running') ? 'proof-running' : pstatus === 'failed' ? 'proof-failed' : 'proof-queued';
+            submitted = `<span class="proof-status ${pcls}">${pstatus.toUpperCase()}</span> `;
+            submitted += `<a class="replay-link" href="https://kalien.xyz/replay/${s.submitted_job_id}" target="_blank">\u25b6 ${fmtScore(s.submitted_score)}</a>`;
+        } else if (s.submitted_score > 0) {
+            submitted = `<span style="color:var(--green)">${fmtScore(s.submitted_score)}</span>`;
+        } else {
+            submitted = '<span style="color:var(--dim)">\u2014</span>';
+        }
+
+        return `<tr class="${cls}">
+            <td class="seed-hex">${s.seed}</td>
+            <td>${fmtDuration(s.age_min)}</td>
+            <td style="color:${expired?'var(--red)':s.remaining_min<240?'var(--yellow)':'var(--green)'}">${fmtDuration(s.remaining_min)}</td>
+            <td>${fmtScoreK(s.qualify_score)}</td>
+            <td>${badge}</td><td>${prog}</td>
+            <td class="${sc}">${best>0?fmtScore(best):'\u2014'}</td>
+            <td>${submitted}</td></tr>`;
+    }).join('');
+}
+
+// ── Render Stats ─────────────────────────────────────────────────
+function renderStats(seeds) {
+    const total = seeds.length;
+    const pushed = seeds.filter(s=>s.push_status==='completed').length;
+    const best = Math.max(0,...seeds.map(s=>Math.max(s.qualify_score||0,s.push_score||0)));
+    const active = seeds.filter(s=>s.remaining_min>0).length;
+    document.getElementById('statsBar').innerHTML = `
+        <div class="stat"><div class="stat-value" style="color:var(--cyan)">${total}</div><div class="stat-label">TOTAL SEEDS</div></div>
+        <div class="stat"><div class="stat-value" style="color:var(--green)">${pushed}</div><div class="stat-label">PUSHED</div></div>
+        <div class="stat"><div class="stat-value" style="color:var(--yellow)">${active}</div><div class="stat-label">ACTIVE</div></div>
+        <div class="stat"><div class="stat-value" style="color:var(--pink)">${best>0?fmtScore(best):'\u2014'}</div><div class="stat-label">ALL-TIME BEST</div></div>`;
+}
+
+// ── Render Chart ─────────────────────────────────────────────────
+let lastChartHash = '';
+function renderChart(stats) {
+    const data = stats.scores || [];
+    if (!data.length) return;
+    const hash = JSON.stringify(data.map(d=>[d.seed,d.qualify,d.push]));
+    if (hash === lastChartHash) return;
+    lastChartHash = hash;
+    const ctx = document.getElementById('scoreChart').getContext('2d');
+    if (chart) chart.destroy();
+    const allVals = data.flatMap(d => [d.qualify, d.push].filter(v => v > 0));
+    const yMin = allVals.length ? Math.floor(Math.min(...allVals) * 0.98 / 10000) * 10000 : 0;
+    chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.map(d=>d.seed.substring(0,8)),
+            datasets: [{
+                label: 'Qualify (w=32K)', data: data.map(d=>d.qualify||null),
+                borderColor: '#4488ff', borderWidth: 1.5, pointRadius: 2, tension: 0.3, fill: false,
+            },{
+                label: 'Push', data: data.map(d=>d.push||null),
+                borderColor: '#00ffcc', borderWidth: 2, pointRadius: 3, tension: 0.3, fill: false,
+            }]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            animation: { duration: 600 },
+            plugins: { legend: { labels: { color: '#555588', font: { family: 'Share Tech Mono', size: 11 } } } },
+            scales: {
+                x: { ticks: { color: '#333366', font: { family: 'Share Tech Mono', size: 9 }, maxRotation: 45, maxTicksLimit: 20 }, grid: { color: 'rgba(34,34,85,0.3)' } },
+                y: { ticks: { color: '#555588', font: { family: 'Share Tech Mono', size: 11 }, callback: v=>(v/1000).toFixed(0)+'K' }, grid: { color: 'rgba(34,34,85,0.3)' }, min: yMin }
+            }
+        }
+    });
+}
+
+// ── Clock ────────────────────────────────────────────────────────
+setInterval(() => { document.getElementById('clock').textContent = new Date().toLocaleTimeString(); }, 1000);
+
+// ── Toast ────────────────────────────────────────────────────────
+function showToast(msg, ok) {
+    const el = document.getElementById('toast');
+    el.className = 'toast ' + (ok ? 'toast-ok' : 'toast-err');
+    el.textContent = msg; el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+// ── In-memory log ────────────────────────────────────────────────
+function logMsg(text, color) {
+    const ts = new Date().toLocaleTimeString();
+    logLines.push({ ts, text, color: color || '' });
+    if (logLines.length > MAX_LOG_LINES) logLines.splice(0, logLines.length - MAX_LOG_LINES);
+    // Update log view if visible
+    const logPage = document.getElementById('page-log');
+    if (logPage.classList.contains('active')) {
+        renderLog();
+    }
+}
+
+function renderLog() {
+    const el = document.getElementById('logContainer');
+    if (!logLines.length) {
+        el.innerHTML = '<span style="color:var(--dim)">No log data yet. Click START FARMING to begin.</span>';
+        return;
+    }
+    el.innerHTML = logLines.map(l => {
+        let cls = '';
+        if (l.color) {
+            cls = 'color:var(--' + l.color + ')';
+        } else if (l.text.includes('ERROR') || l.text.includes('FAIL') || l.text.includes('FATAL')) {
+            cls = 'color:var(--red)';
+        } else if (l.text.includes('WARNING') || l.text.includes('WARN')) {
+            cls = 'color:var(--yellow)';
+        } else if (l.text.includes('NEW BEST') || l.text.includes('SUBMITTED')) {
+            cls = 'color:var(--green)';
+        } else if (l.text.includes('Benchmark') || l.text.includes('Calibrated')) {
+            cls = 'color:var(--cyan)';
+        } else if (l.text.includes('===')) {
+            cls = 'color:var(--cyan);font-weight:bold';
+        } else if (l.text.includes('DONE')) {
+            cls = 'color:var(--purple)';
+        }
+        const line = '[' + l.ts + '] ' + l.text;
+        return cls ? `<span style="${cls}">${line}</span>` : line;
+    }).join('\n');
+    if (document.getElementById('logAutoScroll').checked) {
+        el.scrollTop = el.scrollHeight;
+    }
+}
+
+// ── Runner Status ────────────────────────────────────────────────
+function updateRunnerStatus(state) {
+    const el = document.getElementById('runnerStatus');
+    const states = {
+        'LOADING':      { cls: 'runner-paused',  text: 'LOADING ENGINE...' },
+        'READY':        { cls: 'runner-stopped',  text: 'READY' },
+        'BENCHMARKING': { cls: 'runner-running',  text: 'BENCHMARKING...' },
+        'FARMING':      { cls: 'runner-running',  text: 'FARMING' },
+        'SUBMITTING':   { cls: 'runner-running',  text: 'SUBMITTING...' },
+        'WAITING':      { cls: 'runner-paused',   text: 'WAITING FOR SEED' },
+        'STOPPED':      { cls: 'runner-stopped',  text: 'STOPPED' },
+    };
+    const s = states[state] || states['STOPPED'];
+    el.className = 'runner-status ' + s.cls;
+    el.textContent = s.text;
+
+    // Update button states
+    document.getElementById('btnStart').disabled = (state === 'FARMING' || state === 'BENCHMARKING' || state === 'SUBMITTING' || state === 'LOADING');
+    document.getElementById('btnStop').disabled = (state !== 'FARMING' && state !== 'WAITING' && state !== 'BENCHMARKING');
+}
+
+// ── Mission Display ──────────────────────────────────────────────
+function renderMission() {
+    const m = document.getElementById('missionMain');
+    const d = document.getElementById('missionDetails');
+
+    if (!farming && !currentSeed) {
+        m.innerHTML = '<span style="color:var(--dim)">IDLE</span>';
+        d.innerHTML = '';
+        return;
+    }
+
+    if (currentSeed && farming) {
+        const pr = _liveProgress || {};
+
+        // Elapsed timer
+        const elapsed = _missionStartTime ? Date.now() - _missionStartTime : 0;
+        const elMin = Math.floor(elapsed / 60000);
+        const elSec = Math.floor((elapsed % 60000) / 1000);
+        const timer = `${elMin}:${elSec < 10 ? '0' : ''}${elSec}`;
+
+        m.innerHTML = `<span class="spinner"></span>\u25b6 FARMING <span style="color:var(--yellow)">${currentSeed}</span>`;
+
+        let frameInfo = '';
+        let etaInfo = '';
+        if (pr.frame && pr.total_frames) {
+            const pct = Math.floor((pr.frame / pr.total_frames) * 100);
+            frameInfo = ` \u00b7 frame <span>${pr.frame.toLocaleString()}/${pr.total_frames.toLocaleString()}</span> (${pct}%)`;
+
+            // ETA
+            if (pct > 2 && elapsed > 10000) {
+                const totalEst = elapsed / (pct / 100);
+                const remaining = totalEst - elapsed;
+                const remMin = Math.floor(remaining / 60000);
+                const remSec = Math.floor((remaining % 60000) / 1000);
+                etaInfo = ` \u00b7 <span style="color:var(--dim)">ETA ${remMin}m${remSec < 10 ? '0' : ''}${remSec}s</span>`;
+            }
+        }
+
+        const scoreVal = pr.live_score || 0;
+        const beamW = benchmarkData ? benchmarkData.beam : '?';
+        d.innerHTML = `w=<span>${typeof beamW === 'number' ? beamW.toLocaleString() : beamW}</span>${frameInfo} \u00b7 score: <span style="color:var(--green)">${fmtScore(scoreVal)}</span> \u00b7 <span style="color:var(--cyan)">${timer}</span>${etaInfo}`;
+    }
+}
+
+// ── Progress Handler ─────────────────────────────────────────────
+function handleProgress(msg) {
+    if (msg.phase === 'benchmark') {
+        const m = document.getElementById('missionMain');
+        const d = document.getElementById('missionDetails');
+        m.innerHTML = '<span class="spinner"></span><span style="color:var(--cyan)">\u25b6 BENCHMARKING</span>';
+        const pct = Math.floor(msg.frame / msg.frames * 100);
+        d.innerHTML = 'Running test beam \u00b7 frame <span>' + msg.frame.toLocaleString() + '/' + msg.frames.toLocaleString() + '</span> (' + pct + '%) \u00b7 score: <span style="color:var(--green)">' + msg.score.toLocaleString() + '</span>';
+    } else {
+        _liveProgress = {
+            frame: msg.frame, total_frames: msg.frames,
+            live_score: msg.score,
+            salt: 0, salt_total: 1,
+        };
+        renderMission();
+    }
+}
+
+// ── ArrayBuffer to Base64 ────────────────────────────────────────
+function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+}
+
+// ── Benchmark Cache ──────────────────────────────────────────────
+function saveBenchmark(data) {
+    localStorage.setItem('kalien_benchmark', JSON.stringify(data));
+}
+function loadBenchmark() {
+    try {
+        const d = JSON.parse(localStorage.getItem('kalien_benchmark'));
+        if (!d || Date.now() - d.ts > 7 * 86400000) return null;
+        if (d.cores !== navigator.hardwareConcurrency) return null;
+        return d;
+    } catch { return null; }
+}
+
+// ── Wake Lock ────────────────────────────────────────────────────
+async function acquireWakeLock() {
+    try {
+        if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => { wakeLock = null; });
+            logMsg('Wake lock acquired (screen will stay on)');
+        }
+    } catch (e) {
+        logMsg('Wake lock unavailable: ' + e.message, 'yellow');
+    }
+}
+function releaseWakeLock() {
+    if (wakeLock) {
+        wakeLock.release();
+        wakeLock = null;
+        logMsg('Wake lock released');
+    }
+}
+
+// ── Fetch Seed ───────────────────────────────────────────────────
+async function fetchSeed() {
+    try {
+        const data = await fetch('/proxy/seed/current').then(r => r.json());
+        if (!data.seed && data.seed !== 0) return null;
+        return { seedId: data.seed_id, seedHex: data.seed.toString(16).toUpperCase().padStart(8, '0') };
+    } catch (e) {
+        logMsg('Failed to fetch seed: ' + e.message, 'red');
+        return null;
+    }
+}
+
+// ── Start / Stop ─────────────────────────────────────────────────
+async function startFarming() {
+    if (!wasmReady) {
+        showToast('Engine not ready yet', false);
+        return;
+    }
+    const claimant = localStorage.getItem('kalien_claimant') || '';
+    if (!claimant) {
+        showToast('Set your claimant address first (SETUP tab)', false);
+        document.querySelector('[data-page="setup"]').click();
+        return;
+    }
+    farming = true;
+    stopping = false;
+    await acquireWakeLock();
+    logMsg('=== FARMING STARTED ===', 'cyan');
+
+    if (!benchmarkData) {
+        updateRunnerStatus('BENCHMARKING');
+        logMsg('Running benchmark (w=2048)...');
+        worker.postMessage({ type: 'benchmark', threads: 0 });
+        return; // benchmark_result handler will call startNextSeed
+    }
+    await startNextSeed();
+}
+
+function stopFarming() {
+    stopping = true;
+    logMsg('Stopping after current run...', 'yellow');
+    showToast('Stopping after current run finishes', true);
+    // If we are waiting, stop immediately
+    if (!currentSeed || document.getElementById('runnerStatus').textContent === 'WAITING FOR SEED') {
+        farming = false;
+        stopping = false;
+        currentSeed = null;
+        currentSeedId = null;
+        _liveProgress = {};
+        updateRunnerStatus('STOPPED');
+        renderMission();
+        releaseWakeLock();
+        logMsg('=== FARMING STOPPED ===', 'cyan');
+    }
+}
+
+// ── Seed Loop ────────────────────────────────────────────────────
+async function startNextSeed() {
+    if (!farming || stopping) {
+        farming = false;
+        stopping = false;
+        currentSeed = null;
+        currentSeedId = null;
+        _liveProgress = {};
+        updateRunnerStatus('STOPPED');
+        renderMission();
+        releaseWakeLock();
+        logMsg('=== FARMING STOPPED ===', 'cyan');
+        return;
+    }
+
+    updateRunnerStatus('FARMING');
+
+    const seedData = await fetchSeed();
+    if (!seedData) {
+        logMsg('Could not fetch seed, retrying in 15s...', 'yellow');
+        updateRunnerStatus('WAITING');
+        setTimeout(() => { if (farming && !stopping) startNextSeed(); else { farming = false; stopping = false; updateRunnerStatus('STOPPED'); renderMission(); releaseWakeLock(); } }, 15000);
+        return;
+    }
+
+    if (qualifiedSeeds.has(seedData.seedHex)) {
+        updateRunnerStatus('WAITING');
+        logMsg('Already qualified ' + seedData.seedHex + ' \u2014 waiting for new seed...');
+        renderMission();
+        setTimeout(() => { if (farming && !stopping) startNextSeed(); else { farming = false; stopping = false; updateRunnerStatus('STOPPED'); renderMission(); releaseWakeLock(); } }, 15000);
+        return;
+    }
+
+    currentSeed = seedData.seedHex;
+    currentSeedId = seedData.seedId;
+    _liveProgress = {};
+    _missionSeed = currentSeed;
+    _missionStartTime = Date.now();
+    logMsg('QUALIFY ' + currentSeed + ' (w=' + benchmarkData.beam.toLocaleString() + ')');
+    renderMission();
+
+    worker.postMessage({
+        type: 'run',
+        seed: parseInt(currentSeed, 16),
+        seedId: currentSeedId,
+        salt: 0,
+        beam: benchmarkData.beam,
+        threads: 0,
+        phase: 'qualify',
+    });
+}
+
+// ── Handle Result ────────────────────────────────────────────────
+async function handleResult(msg) {
+    const score = msg.score;
+    const seedHex = msg.seed.toString(16).toUpperCase().padStart(8, '0');
+    logMsg('DONE: ' + seedHex + ' score=' + score.toLocaleString() + ' (' + msg.elapsed + 's)', 'purple');
+    qualifiedSeeds.add(seedHex);
+
+    // Clone tape bytes BEFORE any async work that might detach them
+    let tapeB64 = '';
+    let tapeForSubmit = null;
+    if (msg.tapeBytes) {
+        const tapeCopy = new Uint8Array(msg.tapeBytes).slice();
+        tapeB64 = arrayBufferToBase64(tapeCopy.buffer);
+        tapeForSubmit = tapeCopy;
+    }
+
+    // Submit tape via proxy
+    const claimant = localStorage.getItem('kalien_claimant') || '';
+    let jobId = '';
+    if (claimant && tapeForSubmit) {
+        logMsg('Submitting ' + seedHex + ': ' + score.toLocaleString() + '...');
+        updateRunnerStatus('SUBMITTING');
+        try {
+            const resp = await fetch('/proxy/proofs/jobs?claimant=' + encodeURIComponent(claimant) + '&seed_id=' + msg.seedId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/octet-stream' },
+                body: tapeForSubmit,
+            });
+            const data = await resp.json();
+            if (data.success) {
+                jobId = data.job?.jobId || data.job?.job_id || '';
+                logMsg('SUBMITTED! Job=' + jobId, 'green');
+            } else {
+                logMsg('Submission failed: ' + (data.error || 'unknown'), 'red');
+            }
+        } catch (e) {
+            logMsg('Submission error: ' + e.message, 'red');
+        }
+    }
+
+    // Record to server DB
+    try {
+        await api('/api/record_run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                seed_hex: seedHex,
+                seed_id: msg.seedId,
+                score,
+                salt: '0x00000000',
+                elapsed: Math.round(msg.elapsed),
+                job_id: jobId,
+                tape_b64: tapeB64,
+            }),
+        });
+    } catch (e) {
+        logMsg('Record error: ' + e.message, 'red');
+    }
+
+    // Check if we should do a push run (1 salt at higher beam)
+    const pushMult = getPushMultiplier();
+    const pushThreshold = parseInt(document.getElementById('settingThreshold').value) || 1190000;
+    const wasQualify = !msg.phase || msg.phase === 'qualify';
+    if (wasQualify && pushMult > 0 && score > pushThreshold && benchmarkData && farming && !stopping) {
+        const pushBeam = benchmarkData.beam * pushMult;
+        logMsg('*** Score ' + score.toLocaleString() + ' > threshold — PUSH w=' + pushBeam.toLocaleString() + ' ***', 'yellow');
+        _liveProgress = {};
+        _missionStartTime = Date.now();
+        renderMission();
+        worker.postMessage({
+            type: 'run',
+            seed: msg.seed,
+            seedId: msg.seedId,
+            salt: 1,  // different salt than qualify
+            beam: pushBeam,
+            threads: 0,
+            phase: 'push',
+        });
+        return;
+    }
+
+    // Clear current seed
+    currentSeed = null;
+    currentSeedId = null;
+    _liveProgress = {};
+
+    // Continue or stop
+    if (farming && !stopping) {
+        startNextSeed();
+    } else {
+        farming = false;
+        stopping = false;
+        updateRunnerStatus('STOPPED');
+        renderMission();
+        releaseWakeLock();
+        logMsg('=== FARMING STOPPED ===', 'cyan');
+    }
+    refresh(); // refresh dashboard data
+}
+
+// ── Init Worker ──────────────────────────────────────────────────
+function initWorker() {
+    worker = new Worker('worker.js');
+    logMsg('Loading WASM engine...');
+
+    worker.onmessage = async (e) => {
+        const msg = e.data;
+        switch (msg.type) {
+            case 'ready':
+                wasmReady = true;
+                updateRunnerStatus('READY');
+                benchmarkData = loadBenchmark();
+                if (benchmarkData) {
+                    logMsg('Engine loaded \u2014 using saved benchmark (w=' + benchmarkData.beam + ')', 'green');
+                } else {
+                    logMsg('Engine loaded \u2014 benchmark needed');
+                }
+                enableStart();
+                break;
+
+            case 'benchmark_start':
+                break;
+
+            case 'progress':
+                handleProgress(msg);
+                break;
+
+            case 'benchmark_result':
+                benchmarkData = {
+                    beam: msg.calibratedBeam,
+                    elapsed: msg.elapsed,
+                    ts: Date.now(),
+                    cores: navigator.hardwareConcurrency,
+                };
+                saveBenchmark(benchmarkData);
+                logMsg('Benchmark: w=' + msg.testBeam + ' in ' + msg.elapsed + 's \u2192 calibrated w=' + msg.calibratedBeam, 'green');
+                renderBenchmarkInfo();
+                if (farming) {
+                    startNextSeed();
+                }
+                break;
+
+            case 'result':
+                await handleResult(msg);
+                break;
+
+            case 'log':
+                logMsg(msg.text);
+                break;
+
+            case 'error':
+                logMsg('ERROR: ' + msg.text, 'red');
+                if (farming) {
+                    logMsg('Retrying in 10s...', 'yellow');
+                    currentSeed = null;
+                    currentSeedId = null;
+                    _liveProgress = {};
+                    setTimeout(() => { if (farming && !stopping) startNextSeed(); }, 10000);
+                }
+                break;
+        }
+    };
+
+    worker.onerror = (e) => {
+        logMsg('Worker error: ' + e.message, 'red');
+    };
+}
+
+function enableStart() {
+    const claimant = localStorage.getItem('kalien_claimant') || '';
+    if (claimant) {
+        document.getElementById('btnStart').disabled = false;
+    }
+}
+
+// ── Refresh (polls server for persistent data) ───────────────────
+async function refresh() {
+    try {
+        const [seeds, stats] = await Promise.all([
+            api('/api/seeds'),
+            api('/api/stats'),
+        ]);
+        renderSeeds(seeds);
+        renderStats(seeds);
+        renderChart(stats);
+
+        // Render mission only when idle (worker drives it when farming)
+        if (!farming) {
+            const m = document.getElementById('missionMain');
+            const d = document.getElementById('missionDetails');
+            m.innerHTML = '<span style="color:var(--dim)">IDLE</span>';
+            d.innerHTML = seeds.length + ' seeds farmed this session';
+        }
+    } catch (e) {
+        console.error('Refresh:', e);
+    }
+}
+
+async function refreshProofs() {
+    try { _proofs = await api('/api/proofs'); } catch (e) {}
+}
+
+// ── Tapes ────────────────────────────────────────────────────────
+async function refreshTapes() {
+    try {
+        const tapes = await api('/api/tapes');
+        document.getElementById('tapesCount').textContent = tapes.length;
+        const best = Math.max(0, ...tapes.map(t => t.score));
+        document.getElementById('tapesBest').textContent = best > 0 ? best.toLocaleString() : '\u2014';
+        document.getElementById('tapesBody').innerHTML = tapes.map(t => {
+            const sc = t.score >= 1200000 ? 'score-high' : 'score';
+            return `<tr>
+                <td class="seed-hex">${t.seed}</td>
+                <td>${t.salt}</td>
+                <td class="${sc}">${t.score.toLocaleString()}</td>
+                <td style="color:var(--dim)">${t.time}</td>
+                <td style="color:var(--dim);font-size:11px">${t.file}</td>
+            </tr>`;
+        }).join('');
+    } catch (e) {}
+}
+document.querySelector('[data-page="tapes"]').addEventListener('click', refreshTapes);
+
+// ── Global Leaderboard ──────────────────────────────────────────
+async function refreshGlobal() {
+    try {
+        const data = await fetch('/api/global').then(r => r.json());
+        document.getElementById('globalUsers').textContent = data.total_users;
+        document.getElementById('globalRuns').textContent = data.total_runs;
+        document.getElementById('globalBest').textContent = data.best_score > 0 ? data.best_score.toLocaleString() : '\u2014';
+        document.getElementById('globalBody').innerHTML = data.runs.map(r => {
+            const sc = r.score >= 1200000 ? 'score-high' : 'score';
+            const elapsed = r.elapsed ? (r.elapsed < 60 ? r.elapsed + 's' : Math.floor(r.elapsed/60) + 'm' + (r.elapsed%60) + 's') : '\u2014';
+            let submitted = '';
+            if (r.job_id) {
+                submitted = '<a class="replay-link" href="https://kalien.xyz/replay/' + r.job_id + '" target="_blank">\u25b6 ' + r.submitted.toLocaleString() + '</a>';
+            } else if (r.submitted > 0) {
+                submitted = '<span style="color:var(--green)">' + r.submitted.toLocaleString() + '</span>';
+            } else {
+                submitted = '<span style="color:var(--dim)">\u2014</span>';
+            }
+            return `<tr>
+                <td style="color:var(--purple);font-size:11px" title="${r.claimant}">${r.claimant_short}</td>
+                <td class="seed-hex">${r.seed}</td>
+                <td class="${sc}">${r.score > 0 ? r.score.toLocaleString() : '\u2014'}</td>
+                <td style="color:var(--dim)">${elapsed}</td>
+                <td>${submitted}</td>
+                <td style="color:var(--dim);font-size:11px">${r.time}</td>
+            </tr>`;
+        }).join('');
+    } catch (e) {}
+}
+// Global tab may not exist in nav (hidden) — only loaded via hash
+const _globalTab = document.querySelector('[data-page="global"]');
+if (_globalTab) _globalTab.addEventListener('click', refreshGlobal);
+
+// ── Settings ─────────────────────────────────────────────────────
+async function loadSettings() {
+    try {
+        const s = await api('/api/settings');
+        document.getElementById('settingThreshold').value = s.push_threshold || 1190000;
+        document.getElementById('settingPushMultiplier').value = s.push_multiplier ?? 4;
+    } catch (e) {}
+    renderBenchmarkInfo();
+}
+
+function renderBenchmarkInfo() {
+    const el = document.getElementById('benchmarkInfo');
+    const b = loadBenchmark();
+    const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--dim)">${label}</span><span>${value}</span></div>`;
+
+    if (!b) {
+        el.innerHTML = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
+            '<div style="color:var(--dim);margin-top:12px">No benchmark yet. Click START FARMING to auto-benchmark.</div>';
+        return;
+    }
+
+    el.innerHTML = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
+        '<div style="margin-top:12px">' +
+        row('Mode', '<span style="color:var(--cyan)">WASM (Browser)</span>') +
+        row('Calibrated beam', '<span style="color:var(--cyan)">w=' + b.beam.toLocaleString() + '</span>') +
+        row('Benchmark time', b.elapsed + 's (w=2048)') +
+        row('CPU cores', (b.cores || navigator.hardwareConcurrency || '?')) +
+        row('Benchmarked', new Date(b.ts).toLocaleString()) +
+        '</div>' +
+        '<div style="margin-top:12px"><button class="ctrl-btn" onclick="reBenchmark()" style="font-size:10px">RE-BENCHMARK</button></div>';
+}
+
+function reBenchmark() {
+    localStorage.removeItem('kalien_benchmark');
+    benchmarkData = null;
+    renderBenchmarkInfo();
+    showToast('Benchmark cleared. Next START FARMING will re-benchmark.', true);
+    logMsg('Benchmark data cleared. Will re-benchmark on next start.');
+}
+
+async function saveSettings() {
+    const threshold = parseInt(document.getElementById('settingThreshold').value) || 1190000;
+    const pushMultiplier = parseInt(document.getElementById('settingPushMultiplier').value) || 4;
+    try {
+        const data = await api('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ push_threshold: threshold, push_multiplier: pushMultiplier }),
+        });
+        showToast(data.ok ? 'Settings saved' : 'Failed', data.ok);
+    } catch (e) { showToast('Failed: ' + e, false); }
+}
+
+function getPushMultiplier() {
+    try {
+        return parseInt(document.getElementById('settingPushMultiplier').value) || 4;
+    } catch { return 4; }
+}
+loadSettings();
+document.querySelector('[data-page="settings"]').addEventListener('click', loadSettings);
+
+// ── Setup ────────────────────────────────────────────────────────
+function renderSetupHTML(isOverlay) {
+    const claimant = localStorage.getItem('kalien_claimant') || '';
+    const hasClaimant = claimant.length > 0;
+    const hasBenchmark = !!loadBenchmark();
+
+    const ind = (v) => v
+        ? '<div class="setup-indicator ok">&#x2713;</div>'
+        : '<div class="setup-indicator fail">&#x2717;</div>';
+
+    let html = '';
+    if (isOverlay) {
+        html += '<h2>FIRST RUN SETUP</h2>';
+        html += '<div class="setup-subtitle">Set your claimant address to start farming</div>';
+    } else {
+        html += '<div class="mission" style="max-width:560px"><div class="mission-label">SETUP CHECKLIST</div>';
+    }
+
+    // Step 1: Claimant
+    html += '<div class="setup-step">';
+    html += ind(hasClaimant);
+    html += '<div class="setup-step-content">';
+    html += '<div class="setup-step-title">1. Set Claimant Address</div>';
+    if (hasClaimant) {
+        html += '<div class="setup-step-detail">Configured: <code>' + claimant.substring(0, 8) + '...' + claimant.substring(claimant.length - 4) + '</code></div>';
+    } else {
+        html += '<div class="setup-step-detail">Your Stellar address for claiming rewards</div>';
+    }
+    html += '<div class="setup-input-row">';
+    html += '<input type="text" id="setupClaimant' + (isOverlay ? 'O' : 'P') + '" placeholder="G... or C... address" value="' + (claimant || '') + '">';
+    html += '<button class="ctrl-btn start" onclick="saveClaimant(\'' + (isOverlay ? 'O' : 'P') + '\')">SAVE</button>';
+    html += '</div></div></div>';
+
+    // Step 2: Benchmark
+    html += '<div class="setup-step">';
+    html += ind(hasBenchmark);
+    html += '<div class="setup-step-content">';
+    html += '<div class="setup-step-title">2. Browser Benchmark</div>';
+    if (hasBenchmark) {
+        const b = loadBenchmark();
+        html += '<div class="setup-step-detail">Calibrated beam width: <code>w=' + b.beam + '</code> (' + b.elapsed + 's test run)</div>';
+    } else {
+        html += '<div class="setup-step-detail">Auto-runs on first START FARMING. Calibrates beam width for your hardware (~2 min).</div>';
+    }
+    html += '</div></div>';
+
+    // Start farming button
+    if (hasClaimant) {
+        html += '<div class="setup-ready">';
+        if (hasBenchmark) {
+            html += '<div class="setup-ready-msg">READY TO FARM!</div>';
+        } else {
+            html += '<div class="setup-ready-msg">SETUP COMPLETE</div>';
+            html += '<div class="setup-step-detail" style="margin-bottom:12px">First run will benchmark your browser (~2 min), then farming begins automatically.</div>';
+        }
+        html += '<button class="ctrl-btn start" style="font-size:16px;padding:14px 40px;letter-spacing:3px" onclick="dismissSetup();startFarming()">START FARMING</button>';
+        html += '</div>';
+    }
+
+    // Browser info
+    html += '<div class="setup-info">Browser: <span>' + navigator.userAgent.split(' ').slice(-2).join(' ') + '</span> &middot; Cores: <span>' + (navigator.hardwareConcurrency || '?') + '</span></div>';
+
+    if (!isOverlay) html += '</div>';
+    return html;
+}
+
+function refreshSetup() {
+    document.getElementById('setupContent').innerHTML = renderSetupHTML(false);
+    // Show overlay if no claimant
+    const claimant = localStorage.getItem('kalien_claimant') || '';
+    const overlay = document.getElementById('setupOverlay');
+    if (!claimant) {
+        document.getElementById('setupOverlayContent').innerHTML = renderSetupHTML(true);
+        overlay.classList.add('active');
+    } else {
+        overlay.classList.remove('active');
+    }
+}
+
+function dismissSetup() {
+    document.getElementById('setupOverlay').classList.remove('active');
+}
+
+async function saveClaimant(suffix) {
+    const input = document.getElementById('setupClaimant' + suffix);
+    const addr = input.value.trim();
+    if (!addr) { showToast('Enter an address', false); return; }
+
+    // Save to localStorage
+    localStorage.setItem('kalien_claimant', addr);
+
+    // Also save to server
+    try {
+        await api('/api/settings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ claimant: addr }),
+        });
+    } catch (e) {
+        // Server save is optional; localStorage is the source of truth for web farmer
+        console.error('Server save error:', e);
+    }
+
+    showToast('Claimant address saved', true);
+    enableStart();
+    refreshSetup();
+}
+
+refreshSetup();
+document.querySelector('[data-page="setup"]').addEventListener('click', refreshSetup);
+
+// ── Log tab refresh ──────────────────────────────────────────────
+document.querySelector('[data-page="log"]').addEventListener('click', () => {
+    renderLog();
+});
+
+// ── Init ─────────────────────────────────────────────────────────
+refresh();
+refreshProofs();
+setInterval(refresh, 5000);
+setInterval(refreshProofs, 30000);
+initWorker();
+</script>
+</body>
+</html>

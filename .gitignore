@@ -6,6 +6,7 @@ engine/*.obj
 
 # Runtime data
 tapes/
+web_data/
 
 # Python
 __pycache__/

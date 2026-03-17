@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KALIEN WEB FARMER</title>
+<link rel="icon" type="image/png" href="https://kalien.xyz/favicon.png">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+:root {
+    --bg: #05051a; --bg2: #0a0a2a; --bg3: #10103a;
+    --cyan: #00ffcc; --pink: #ff0066; --purple: #9d4edd;
+    --yellow: #ffd000; --green: #00ff66; --red: #ff3344;
+    --blue: #4488ff; --text: #c0c0d0; --dim: #606080;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+    font-family: 'Share Tech Mono', monospace;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+}
+h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 900; font-size: 2rem;
+    color: var(--cyan);
+    text-shadow: 0 0 20px rgba(0,255,204,0.3);
+    margin-bottom: 0.5rem; letter-spacing: 4px;
+}
+.subtitle { color: var(--dim); font-size: 0.85rem; margin-bottom: 2rem; }
+.card {
+    background: var(--bg2);
+    border: 1px solid rgba(0,255,204,0.15);
+    border-radius: 8px; padding: 1.5rem;
+    width: 100%; max-width: 600px; margin-bottom: 1rem;
+}
+.card h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 0.9rem; color: var(--cyan);
+    margin-bottom: 1rem; letter-spacing: 2px;
+}
+label {
+    display: block; color: var(--dim); font-size: 0.8rem;
+    margin-bottom: 0.3rem; text-transform: uppercase; letter-spacing: 1px;
+}
+input[type="text"] {
+    width: 100%; background: var(--bg3);
+    border: 1px solid rgba(0,255,204,0.2);
+    border-radius: 4px; padding: 0.7rem 1rem;
+    color: var(--cyan); font-family: 'Share Tech Mono', monospace;
+    font-size: 0.95rem; outline: none; margin-bottom: 1rem;
+}
+input[type="text"]:focus { border-color: var(--cyan); box-shadow: 0 0 8px rgba(0,255,204,0.2); }
+input[type="text"]::placeholder { color: var(--dim); }
+button {
+    font-family: 'Orbitron', sans-serif; font-weight: 700;
+    font-size: 1rem; padding: 0.8rem 2rem;
+    border: none; border-radius: 4px; cursor: pointer;
+    letter-spacing: 2px; transition: all 0.2s; width: 100%;
+}
+.btn-primary { background: linear-gradient(135deg, var(--cyan), var(--green)); color: var(--bg); }
+.btn-primary:hover { filter: brightness(1.2); }
+.btn-primary:disabled { background: var(--bg3); color: var(--dim); cursor: not-allowed; filter: none; }
+.btn-danger { background: linear-gradient(135deg, var(--red), var(--pink)); color: white; }
+.btn-danger:hover { filter: brightness(1.2); }
+.btn-small {
+    font-size: 0.7rem; padding: 0.4rem 0.8rem; width: auto;
+    background: var(--bg3); color: var(--dim); letter-spacing: 1px;
+}
+.btn-small:hover { color: var(--cyan); border-color: var(--cyan); }
+
+/* Progress bars */
+.progress-bar {
+    width: 100%; height: 8px; background: var(--bg3);
+    border-radius: 4px; overflow: hidden; margin: 0.5rem 0;
+    position: relative;
+}
+.progress-fill {
+    height: 100%; border-radius: 4px;
+    transition: width 0.5s ease; width: 0%;
+}
+.progress-fill.cyan { background: linear-gradient(90deg, var(--cyan), var(--green)); }
+.progress-fill.yellow { background: linear-gradient(90deg, var(--yellow), #ff8800); }
+.progress-fill.indeterminate {
+    width: 30% !important;
+    animation: slide 1.5s ease-in-out infinite;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+}
+@keyframes slide {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+}
+
+/* Phase indicator */
+.phase {
+    display: flex; align-items: center; gap: 0.8rem;
+    padding: 0.8rem 1rem; border-radius: 6px;
+    background: var(--bg3); margin-bottom: 1rem;
+}
+.phase-icon {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.1rem; flex-shrink: 0;
+}
+.phase-icon.loading { background: rgba(0,255,204,0.15); animation: pulse 1.5s ease-in-out infinite; }
+.phase-icon.bench { background: rgba(255,208,0,0.15); animation: pulse 1.5s ease-in-out infinite; }
+.phase-icon.running { background: rgba(0,255,102,0.15); animation: pulse 1.5s ease-in-out infinite; }
+.phase-icon.waiting { background: rgba(68,136,255,0.15); animation: pulse 3s ease-in-out infinite; }
+.phase-icon.done { background: rgba(0,255,102,0.15); }
+.phase-icon.error { background: rgba(255,51,68,0.15); }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.phase-text { flex: 1; }
+.phase-title { font-size: 0.85rem; color: var(--text); font-weight: bold; }
+.phase-detail { font-size: 0.75rem; color: var(--dim); margin-top: 2px; }
+
+/* Status rows */
+.status-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 0.4rem 0; border-bottom: 1px solid rgba(0,255,204,0.05);
+}
+.status-row:last-child { border-bottom: none; }
+.status-label { color: var(--dim); font-size: 0.8rem; }
+.status-value { font-size: 0.95rem; }
+.val-cyan { color: var(--cyan); }
+.val-yellow { color: var(--yellow); font-weight: bold; }
+.val-green { color: var(--green); }
+.val-dim { color: var(--dim); }
+
+/* Stats grid */
+.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.5rem; }
+.stat-box { background: var(--bg3); border-radius: 4px; padding: 0.8rem; text-align: center; }
+.stat-box .val { font-family: 'Orbitron', sans-serif; font-size: 1.2rem; color: var(--cyan); }
+.stat-box .lbl { font-size: 0.7rem; color: var(--dim); margin-top: 0.3rem; text-transform: uppercase; letter-spacing: 1px; }
+
+/* Log */
+#log {
+    background: var(--bg); border: 1px solid rgba(0,255,204,0.1);
+    border-radius: 4px; padding: 0.8rem; max-height: 200px;
+    overflow-y: auto; font-size: 0.75rem; color: var(--dim); line-height: 1.5;
+}
+#log .entry { white-space: pre-wrap; word-break: break-all; }
+#log .entry.error { color: var(--red); }
+#log .entry.success { color: var(--green); }
+#log .entry.highlight { color: var(--yellow); }
+
+.hidden { display: none !important; }
+a { color: var(--cyan); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.footer { margin-top: 2rem; font-size: 0.75rem; color: var(--dim); text-align: center; }
+.row { display: flex; gap: 0.5rem; align-items: center; }
+.row > * { flex: 1; }
+.mt { margin-top: 0.5rem; }
+</style>
+</head>
+<body>
+
+<h1>KALIEN WEB FARMER</h1>
+<p class="subtitle">Browser-based beam search — no install needed</p>
+
+<!-- Phase Indicator -->
+<div class="card" id="phase-card">
+    <div class="phase" id="phase">
+        <div class="phase-icon loading" id="phase-icon">&#9889;</div>
+        <div class="phase-text">
+            <div class="phase-title" id="phase-title">Loading engine...</div>
+            <div class="phase-detail" id="phase-detail">Initializing WASM module and threads</div>
+        </div>
+    </div>
+    <div class="progress-bar" id="phase-progress-wrap">
+        <div class="progress-fill indeterminate" id="phase-progress"></div>
+    </div>
+</div>
+
+<!-- Setup Card -->
+<div class="card" id="setup-card">
+    <h2>SETUP</h2>
+    <label for="claimant">Stellar Address (starts with G or C, 56 chars)</label>
+    <input type="text" id="claimant" placeholder="G... or C..." maxlength="56"
+           autocomplete="off" spellcheck="false">
+    <div id="bench-info" class="hidden" style="margin-bottom:1rem;">
+        <div class="status-row">
+            <span class="status-label">Beam Width</span>
+            <span class="status-value val-cyan" id="bench-beam">—</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Est. Time per Seed</span>
+            <span class="status-value val-dim" id="bench-est">—</span>
+        </div>
+        <button class="btn-small mt" id="btn-rebench" type="button">Re-benchmark</button>
+    </div>
+    <button id="btn-start" class="btn-primary" disabled>LOADING...</button>
+    <button id="btn-stop" class="btn-danger hidden mt">STOP</button>
+</div>
+
+<!-- Status Card -->
+<div class="card hidden" id="status-card">
+    <h2>CURRENT RUN</h2>
+    <div class="status-row">
+        <span class="status-label">Seed</span>
+        <span class="status-value val-cyan" id="seed-text">—</span>
+    </div>
+    <div class="status-row">
+        <span class="status-label">Score</span>
+        <span class="status-value val-yellow" id="score-text">—</span>
+    </div>
+    <div class="progress-bar">
+        <div class="progress-fill cyan" id="run-progress"></div>
+    </div>
+    <div class="row">
+        <div class="status-row">
+            <span class="status-label">Frame&nbsp;</span>
+            <span class="status-value val-dim" id="frame-text">—</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">ETA&nbsp;</span>
+            <span class="status-value val-dim" id="eta-text">—</span>
+        </div>
+        <div class="status-row">
+            <span class="status-label">Elapsed&nbsp;</span>
+            <span class="status-value val-dim" id="elapsed-text">—</span>
+        </div>
+    </div>
+</div>
+
+<!-- Stats Card -->
+<div class="card hidden" id="stats-card">
+    <h2>SESSION</h2>
+    <div class="stats-grid">
+        <div class="stat-box"><div class="val" id="stat-seeds">0</div><div class="lbl">Seeds Run</div></div>
+        <div class="stat-box"><div class="val" id="stat-submitted">0</div><div class="lbl">Submitted</div></div>
+        <div class="stat-box"><div class="val" id="stat-best">0</div><div class="lbl">Best Score</div></div>
+        <div class="stat-box"><div class="val" id="stat-beam">—</div><div class="lbl">Beam Width</div></div>
+    </div>
+</div>
+
+<!-- Log Card -->
+<div class="card">
+    <h2>LOG</h2>
+    <div id="log"></div>
+</div>
+
+<div class="footer">
+    <a href="https://kalien.xyz" target="_blank">kalien.xyz</a> &middot;
+    <a href="https://github.com/AshFrancis/kalien-farmer" target="_blank">GitHub</a>
+</div>
+
+<script>
+// ── State ──
+const API_BASE = "/api";
+let worker = null;
+let wakeLock = null;
+let running = false;
+let stopping = false;
+let calibratedBeam = 0;
+let currentSeed = null;
+let currentSeedId = null;
+let runStartTime = 0;
+let lastProgressFrame = 0;
+let lastProgressTime = 0;
+let elapsedTimer = null;
+
+let sessionSeeds = 0;
+let sessionSubmitted = 0;
+let sessionBest = 0;
+let qualifiedSeeds = new Set();
+
+// ── DOM refs ──
+const $ = id => document.getElementById(id);
+const $claimant = $("claimant");
+const $btnStart = $("btn-start");
+const $btnStop = $("btn-stop");
+const $btnRebench = $("btn-rebench");
+const $phaseIcon = $("phase-icon");
+const $phaseTitle = $("phase-title");
+const $phaseDetail = $("phase-detail");
+const $phaseProgress = $("phase-progress");
+const $runProgress = $("run-progress");
+const $log = $("log");
+
+// ── Phase display ──
+function setPhase(icon, iconCls, title, detail, progressCls) {
+    $phaseIcon.textContent = icon;
+    $phaseIcon.className = "phase-icon " + iconCls;
+    $phaseTitle.textContent = title;
+    $phaseDetail.textContent = detail;
+    $phaseProgress.className = "progress-fill " + (progressCls || "");
+    if (!progressCls) {
+        $("phase-progress-wrap").classList.add("hidden");
+    } else {
+        $("phase-progress-wrap").classList.remove("hidden");
+    }
+}
+
+// ── Logging ──
+function log(text, cls = "") {
+    const el = document.createElement("div");
+    el.className = "entry" + (cls ? " " + cls : "");
+    el.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+    $log.appendChild(el);
+    $log.scrollTop = $log.scrollHeight;
+    while ($log.children.length > 200) $log.removeChild($log.firstChild);
+}
+
+// ── Wake Lock ──
+async function acquireWakeLock() {
+    if (!("wakeLock" in navigator)) return;
+    try {
+        wakeLock = await navigator.wakeLock.request("screen");
+        wakeLock.addEventListener("release", () => { if (running) acquireWakeLock(); });
+    } catch (e) {}
+}
+function releaseWakeLock() { if (wakeLock) { wakeLock.release(); wakeLock = null; } }
+document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible" && running) acquireWakeLock();
+});
+
+// ── Elapsed timer ──
+function startElapsedTimer() {
+    runStartTime = performance.now();
+    clearInterval(elapsedTimer);
+    elapsedTimer = setInterval(() => {
+        const s = Math.floor((performance.now() - runStartTime) / 1000);
+        $("elapsed-text").textContent = `${Math.floor(s/60)}m ${s%60}s`;
+    }, 1000);
+}
+function stopElapsedTimer() { clearInterval(elapsedTimer); }
+
+// ── API helpers ──
+async function fetchCurrentSeed() {
+    try {
+        const data = await (await fetch(API_BASE + "/seed/current")).json();
+        if (!data.seed && data.seed !== 0) return null;
+        return { seedId: data.seed_id, seedHex: data.seed.toString(16).toUpperCase().padStart(8, "0") };
+    } catch (e) {
+        log("API error: " + e.message, "error");
+        return null;
+    }
+}
+
+async function submitTape(tapeBytes, seedId, claimant) {
+    try {
+        const resp = await fetch(
+            `${API_BASE}/proofs/jobs?claimant=${encodeURIComponent(claimant)}&seed_id=${seedId}`,
+            { method: "POST", headers: { "Content-Type": "application/octet-stream" }, body: tapeBytes }
+        );
+        const data = await resp.json();
+        if (data.success) {
+            const job = data.job || {};
+            return { ok: true, jobId: job.jobId || "unknown", score: job.tape?.metadata?.finalScore || "?" };
+        }
+        return { ok: false, error: data.error || "API rejected submission" };
+    } catch (e) { return { ok: false, error: e.message }; }
+}
+
+function isValidClaimant(addr) {
+    return addr && addr.length === 56 && (addr[0] === "G" || addr[0] === "C");
+}
+
+// ── Benchmark storage ──
+function saveBenchmark(beam, elapsed) {
+    localStorage.setItem("kalien_benchmark", JSON.stringify({
+        beam, elapsed, cores: navigator.hardwareConcurrency || "?",
+        ts: Date.now(), ua: navigator.userAgent.slice(0, 80),
+    }));
+}
+function loadBenchmark() {
+    try {
+        const raw = localStorage.getItem("kalien_benchmark");
+        if (!raw) return null;
+        const b = JSON.parse(raw);
+        // Expire after 7 days or if cores changed
+        if (Date.now() - b.ts > 7 * 86400000) return null;
+        if (b.cores !== (navigator.hardwareConcurrency || "?")) return null;
+        return b;
+    } catch { return null; }
+}
+
+function showBenchInfo(beam, elapsed) {
+    $("bench-info").classList.remove("hidden");
+    $("bench-beam").textContent = beam.toLocaleString();
+    const estSeconds = Math.round(elapsed * beam / 2048);
+    const m = Math.floor(estSeconds / 60), s = estSeconds % 60;
+    $("bench-est").textContent = `~${m}m ${s}s`;
+    $("stat-beam").textContent = beam.toLocaleString();
+}
+
+function onBenchmarkReady(beam, elapsed, fromCache) {
+    calibratedBeam = beam;
+    showBenchInfo(beam, elapsed);
+    if (fromCache) {
+        setPhase("\u2705", "done", "Ready to farm", `Using saved benchmark (w=${beam.toLocaleString()})`, "");
+        log(`Loaded saved benchmark: w=${beam.toLocaleString()}`);
+    } else {
+        setPhase("\u2705", "done", "Ready to farm", `Calibrated beam width: ${beam.toLocaleString()}`, "");
+    }
+    $btnStart.textContent = "START FARMING";
+    $btnStart.disabled = false;
+}
+
+function runBenchmark() {
+    setPhase("\u2699\uFE0F", "bench", "Benchmarking...", "Running w=2048 on test seed — this takes 30-60s", "yellow indeterminate");
+    $btnStart.textContent = "BENCHMARKING...";
+    $btnStart.disabled = true;
+    $btnRebench.disabled = true;
+    log("Running benchmark (w=2048)...");
+    worker.postMessage({ type: "benchmark", threads: 0 });
+}
+
+// ── Worker setup ──
+function initWorker() {
+    worker = new Worker("worker.js");
+    worker.onmessage = async function (e) {
+        const msg = e.data;
+        switch (msg.type) {
+            case "ready": {
+                log("Engine loaded");
+                const saved = loadBenchmark();
+                if (saved) {
+                    onBenchmarkReady(saved.beam, saved.elapsed, true);
+                } else {
+                    runBenchmark();
+                }
+                break;
+            }
+            case "benchmark_start":
+                // Reset benchmark progress tracking
+                lastProgressFrame = 0;
+                lastProgressTime = 0;
+                break;
+
+            case "progress":
+                if (msg.phase === "benchmark") {
+                    // Update benchmark progress
+                    const pct = (msg.frame / msg.frames * 100).toFixed(1);
+                    $phaseProgress.style.width = pct + "%";
+                    $phaseProgress.className = "progress-fill yellow";
+                    $phaseDetail.textContent = `Frame ${msg.frame.toLocaleString()} / ${msg.frames.toLocaleString()} — score: ${msg.score.toLocaleString()}`;
+                } else if (msg.phase === "run") {
+                    $("score-text").textContent = msg.score.toLocaleString();
+                    $("frame-text").textContent = `${msg.frame.toLocaleString()} / ${msg.frames.toLocaleString()}`;
+                    const pct = (msg.frame / msg.frames * 100).toFixed(1);
+                    $runProgress.style.width = pct + "%";
+                    // ETA
+                    const now = performance.now();
+                    if (lastProgressFrame > 0 && msg.frame > lastProgressFrame) {
+                        const rate = (msg.frame - lastProgressFrame) / ((now - lastProgressTime) / 1000);
+                        const rem = (msg.frames - msg.frame) / rate;
+                        $("eta-text").textContent = `${Math.floor(rem/60)}m ${Math.floor(rem%60)}s`;
+                    }
+                    lastProgressFrame = msg.frame;
+                    lastProgressTime = now;
+                    // Update phase detail
+                    $phaseDetail.textContent = `${msg.frame.toLocaleString()}/${msg.frames.toLocaleString()} frames — score: ${msg.score.toLocaleString()}`;
+                }
+                break;
+
+            case "benchmark_result":
+                saveBenchmark(msg.calibratedBeam, msg.elapsed);
+                log(`Benchmark: w=${msg.testBeam} in ${msg.elapsed}s, score=${msg.score.toLocaleString()} → calibrated w=${msg.calibratedBeam.toLocaleString()}`, "success");
+                $btnRebench.disabled = false;
+                onBenchmarkReady(msg.calibratedBeam, msg.elapsed, false);
+                break;
+
+            case "result":
+                await handleResult(msg);
+                break;
+
+            case "log":
+                if (!msg.text.startsWith("[BEAM]") && !msg.text.startsWith("[ENGINE]") && !msg.text.startsWith("[MATRIX]") && !msg.text.startsWith("[ARTIFACT]") && msg.text.trim()) {
+                    log(msg.text);
+                }
+                break;
+
+            case "error":
+                log(msg.text, "error");
+                setPhase("\u274C", "error", "Error", msg.text, "");
+                break;
+        }
+    };
+    worker.onerror = (e) => {
+        log("Worker error: " + e.message, "error");
+        setPhase("\u274C", "error", "Engine failed to load", e.message, "");
+    };
+}
+
+async function handleResult(msg) {
+    stopElapsedTimer();
+    const score = msg.score;
+    const seedHex = msg.seed.toString(16).toUpperCase().padStart(8, "0");
+
+    log(`DONE: ${seedHex} score=${score.toLocaleString()} (${msg.elapsed}s)`, "highlight");
+    sessionSeeds++;
+    $("stat-seeds").textContent = sessionSeeds;
+    if (score > sessionBest) {
+        sessionBest = score;
+        $("stat-best").textContent = score.toLocaleString();
+    }
+    qualifiedSeeds.add(seedHex);
+
+    // Submit
+    const claimant = $claimant.value.trim();
+    if (isValidClaimant(claimant) && msg.tapeBytes) {
+        setPhase("\uD83D\uDCE1", "loading", "Submitting...", `${seedHex}: ${score.toLocaleString()}`, "cyan indeterminate");
+        log(`Submitting ${seedHex}: ${score.toLocaleString()}...`);
+        const result = await submitTape(new Uint8Array(msg.tapeBytes), msg.seedId, claimant);
+        if (result.ok) {
+            log(`SUBMITTED! Job=${result.jobId} Score=${result.score}`, "success");
+            sessionSubmitted++;
+            $("stat-submitted").textContent = sessionSubmitted;
+        } else {
+            log(`Submission failed: ${result.error}`, "error");
+        }
+    } else if (!isValidClaimant(claimant)) {
+        log("Skipped submission — no valid address", "error");
+    }
+
+    if (running && !stopping) {
+        startNextSeed();
+    } else {
+        setIdle();
+    }
+}
+
+async function startNextSeed() {
+    setPhase("\uD83D\uDD0D", "loading", "Fetching seed...", "Checking API for current seed", "cyan indeterminate");
+    $runProgress.style.width = "0%";
+    $("score-text").textContent = "—";
+    $("frame-text").textContent = "—";
+    $("eta-text").textContent = "—";
+    $("elapsed-text").textContent = "—";
+    lastProgressFrame = 0;
+
+    const seedData = await fetchCurrentSeed();
+    if (!seedData) {
+        setPhase("\u23F3", "waiting", "Waiting for seed...", "Seed not available yet — retrying in 15s", "");
+        setTimeout(() => { if (running && !stopping) startNextSeed(); }, 15000);
+        return;
+    }
+
+    if (qualifiedSeeds.has(seedData.seedHex)) {
+        setPhase("\u23F3", "waiting", "Waiting for new seed", `Already farmed ${seedData.seedHex} — seeds rotate every ~10 min`, "");
+        log(`Already qualified ${seedData.seedHex} — waiting...`);
+        setTimeout(() => { if (running && !stopping) startNextSeed(); }, 15000);
+        return;
+    }
+
+    currentSeed = seedData.seedHex;
+    currentSeedId = seedData.seedId;
+
+    setPhase("\u26A1", "running", `Farming ${currentSeed}`, `w=${calibratedBeam.toLocaleString()} — starting...`, "cyan");
+    $phaseProgress.style.width = "0%";
+    $("phase-progress-wrap").classList.remove("hidden");
+    $("seed-text").textContent = currentSeed;
+    $("status-card").classList.remove("hidden");
+
+    log(`QUALIFY ${currentSeed} (id=${currentSeedId}, w=${calibratedBeam})`);
+    startElapsedTimer();
+
+    worker.postMessage({
+        type: "run",
+        seed: parseInt(currentSeed, 16),
+        seedId: currentSeedId,
+        salt: 0,
+        beam: calibratedBeam,
+        threads: 0,
+    });
+}
+
+function setIdle() {
+    running = false; stopping = false;
+    stopElapsedTimer();
+    setPhase("\u2705", "done", "Ready to farm", "Click START to begin", "");
+    $btnStart.classList.remove("hidden");
+    $btnStart.textContent = "START FARMING";
+    $btnStart.disabled = false;
+    $btnStop.classList.add("hidden");
+    $btnStop.disabled = false;
+    releaseWakeLock();
+}
+
+// ── Button handlers ──
+$btnStart.addEventListener("click", async () => {
+    const claimant = $claimant.value.trim();
+    if (!isValidClaimant(claimant)) {
+        log("Enter a valid Stellar address (56 chars, starts with G or C)", "error");
+        $claimant.focus();
+        return;
+    }
+    localStorage.setItem("kalien_claimant", claimant);
+    running = true; stopping = false;
+    $btnStart.classList.add("hidden");
+    $btnStop.classList.remove("hidden");
+    $("stats-card").classList.remove("hidden");
+    await acquireWakeLock();
+    startNextSeed();
+});
+
+$btnStop.addEventListener("click", () => {
+    stopping = true;
+    $btnStop.disabled = true;
+    setPhase("\u23F9\uFE0F", "waiting", "Stopping...", "Will stop after current run completes", "");
+    log("Stopping after current run...");
+});
+
+$btnRebench.addEventListener("click", () => {
+    localStorage.removeItem("kalien_benchmark");
+    runBenchmark();
+});
+
+// ── Init ──
+const savedClaimant = localStorage.getItem("kalien_claimant");
+if (savedClaimant) $claimant.value = savedClaimant;
+log("Loading WASM engine...");
+initWorker();
+</script>
+</body>
+</html>

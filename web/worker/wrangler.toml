@@ -1,0 +1,7 @@
+name = "kalien-web-farmer"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+
+# Static assets served from ../site/
+[site]
+bucket = "../site"
