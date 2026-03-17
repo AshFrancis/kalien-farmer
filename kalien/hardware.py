@@ -2,9 +2,12 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import platform
+import re
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import dataclass, field
@@ -77,10 +80,13 @@ def run_benchmark(
     hw: HardwareInfo,
     level: str,
     log_fn: Callable[[str], None],
+    status_path: Optional[Path] = None,
+    log_fh: Any = None,
 ) -> Optional[dict[str, Any]]:
     """Run a short benchmark to calibrate beam widths.
 
     Returns a config dict on success, or ``None`` on failure.
+    If *status_path* is given, writes frame progress for the dashboard.
     """
     log_fn(f"Benchmarking... (mode={hw.mode}, level={level})")
 
@@ -110,17 +116,34 @@ def run_benchmark(
         )
         start = time.time()
         try:
-            result = subprocess.run(cmd, capture_output=True, timeout=600)
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
+            )
+            current_frame = 0
+            for raw in proc.stdout:  # type: ignore[union-attr]
+                line = raw.decode("utf-8", errors="replace")
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                # Write to log file too
+                if log_fh:
+                    log_fh.write(line)
+                m = re.search(r"frame=(\d+)", line)
+                if m:
+                    current_frame = int(m.group(1))
+                    # Write benchmark progress to status file
+                    if status_path:
+                        status_path.write_text(
+                            f"benchmarking w={test_beam} "
+                            f"frame={current_frame}/{FRAMES} "
+                            f"{math.floor(current_frame/FRAMES*100)}%\n"
+                        )
+            exit_code = proc.wait()
         except subprocess.TimeoutExpired:
+            proc.kill()  # type: ignore[union-attr]
             log_fn("  Benchmark timed out at 10 minutes")
             return None
-        if result.returncode != 0:
-            log_fn(f"  Benchmark failed: engine exited with code {result.returncode}")
-            stderr_tail = (
-                result.stderr.decode(errors="replace")[-200:] if result.stderr else ""
-            )
-            if stderr_tail:
-                log_fn(f"  stderr: {stderr_tail}")
+        if exit_code != 0:
+            log_fn(f"  Benchmark failed: engine exited with code {exit_code}")
             return None
         elapsed = time.time() - start
 
@@ -181,6 +204,8 @@ def load_or_benchmark(
     level: str,
     log_fn: Callable[[str], None],
     force: bool = False,
+    status_path: Optional[Path] = None,
+    log_fh: Any = None,
 ) -> Optional[dict[str, Any]]:
     """Load a cached benchmark config, or run a new benchmark."""
     if not force and config_path.exists():
@@ -205,7 +230,7 @@ def load_or_benchmark(
         except Exception:
             pass
 
-    config = run_benchmark(binary, hw, level, log_fn)
+    config = run_benchmark(binary, hw, level, log_fn, status_path=status_path, log_fh=log_fh)
     if config:
         config_path.write_text(json.dumps(config, indent=2))
     return config

@@ -323,7 +323,8 @@ def main() -> None:
 
     # Benchmark / load config
     config = load_or_benchmark(
-        paths.config, binary, hw, args.level, _early_log, force=args.benchmark
+        paths.config, binary, hw, args.level, _early_log,
+        force=args.benchmark, status_path=paths.status,
     )
     if not config:
         _early_log("Benchmark failed!")
