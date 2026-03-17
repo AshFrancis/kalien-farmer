@@ -473,6 +473,7 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
 let sortCol = 'seed_id', sortDir = -1;
 let chart = null;
 let _proofs = {};  // seed -> proof status
+let _liveProgress = {};  // frame/salt progress from status.txt
 
 document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
@@ -517,28 +518,34 @@ function renderSeeds(seeds) {
         else if (s.qualify_score > 1190000) badge = '<span class="status-badge badge-qualified">QUALIFIED</span>';
         else badge = '<span class="status-badge badge-none">\u2014</span>';
         let prog = '';
-        function makeBlocks(done, total, isLive) {
-            const n = Math.min(total, 30);  // max 30 blocks
+        function makeBlocks(done, total, isLive, partialPct) {
+            const n = Math.min(total, 30);
             const scale = total / n;
             let html = '<div class="progress-bar">';
             for (let i = 0; i < n; i++) {
                 const blockIdx = Math.floor(i * scale);
-                if (isLive && blockIdx === done - 1 && done < total) {
-                    html += '<div class="progress-block current"></div>';
-                } else if (blockIdx < done) {
+                const nextBlockIdx = Math.floor((i + 1) * scale);
+                if (blockIdx < done) {
                     html += '<div class="progress-block done"></div>';
+                } else if (isLive && blockIdx === done && partialPct > 0) {
+                    // Partially filled block for current salt
+                    html += `<div class="progress-block current" style="background:linear-gradient(90deg, var(--green) ${partialPct}%, var(--bg3) ${partialPct}%)"></div>`;
                 } else {
                     html += '<div class="progress-block pending"></div>';
                 }
             }
             return html + '</div>';
         }
-        if (s.is_running && s.run_salt_end) {
-            prog = makeBlocks(s.run_salt, s.run_salt_end, true);
+        if (s.is_running) {
+            const pr = _liveProgress || {};
+            const saltsDone = pr.salt || 0;
+            const saltsTotal = pr.salt_total || s.run_salt_end || 1;
+            const framePct = (pr.frame && pr.total_frames) ? Math.floor((pr.frame / pr.total_frames) * 100) : 0;
+            prog = makeBlocks(saltsDone, saltsTotal, true, framePct);
         } else if (s.push_status==='completed') {
-            prog = makeBlocks(s.push_salts_total, s.push_salts_total, false);
+            prog = makeBlocks(s.push_salts_total, s.push_salts_total, false, 0);
         } else if (s.push_salts_total > 0) {
-            prog = makeBlocks(s.push_salts_done, s.push_salts_total, false);
+            prog = makeBlocks(s.push_salts_done, s.push_salts_total, false, 0);
         }
         const best = Math.max(s.qualify_score||0, s.push_score||0, s.run_best||0);
         const sc = best >= 1200000 ? 'score-high' : 'score';
@@ -584,20 +591,64 @@ function renderQueue(queue) {
     }).join('');
 }
 
+let _missionStartTime = null;
+let _missionSeed = null;
+
 function renderMission(status, runnerStatus) {
     const s = status.state;
+    const p = status.progress || {};
     const m = document.getElementById('missionMain');
     const d = document.getElementById('missionDetails');
+
     if (s && s.phase && s.seed) {
+        // Track when this seed started
+        if (_missionSeed !== s.seed) {
+            _missionSeed = s.seed;
+            _missionStartTime = s.started ? new Date(s.started).getTime() : Date.now();
+        }
+
         m.innerHTML = `\u25b6 ${s.phase.toUpperCase()} <span style="color:var(--yellow)">${s.seed}</span>`;
-        const p = s.salt_end ? Math.floor((s.salt_current/s.salt_end)*100) : 0;
-        d.innerHTML = `w=<span>${(s.beam||0).toLocaleString()}</span> \u00b7 salt <span>${s.salt_current}/${s.salt_end}</span> (${p}%) \u00b7 best: <span style="color:var(--green)">${fmtScore(s.best_score)}</span>`;
+
+        // Frame-level progress from status.txt
+        let frameInfo = '';
+        let etaInfo = '';
+        if (p.frame && p.total_frames) {
+            const pct = Math.floor((p.frame / p.total_frames) * 100);
+            // Calculate overall progress: (completed salts + current salt progress) / total salts
+            const saltsDone = p.salt || 0;
+            const saltsTotal = p.salt_total || 1;
+            const overallPct = Math.floor(((saltsDone + p.frame / p.total_frames) / saltsTotal) * 100);
+            frameInfo = ` \u00b7 frame <span>${p.frame.toLocaleString()}/${p.total_frames.toLocaleString()}</span> (${pct}%)`;
+
+            // ETA based on elapsed time and overall progress
+            const elapsed = Date.now() - _missionStartTime;
+            if (overallPct > 2 && elapsed > 10000) {
+                const totalEst = elapsed / (overallPct / 100);
+                const remaining = totalEst - elapsed;
+                const remMin = Math.floor(remaining / 60000);
+                const remSec = Math.floor((remaining % 60000) / 1000);
+                etaInfo = ` \u00b7 <span style="color:var(--dim)">ETA ${remMin}m${remSec < 10 ? '0' : ''}${remSec}s</span>`;
+            }
+        }
+
+        // Elapsed timer
+        const elapsed = Date.now() - _missionStartTime;
+        const elMin = Math.floor(elapsed / 60000);
+        const elSec = Math.floor((elapsed % 60000) / 1000);
+        const timer = `${elMin}:${elSec < 10 ? '0' : ''}${elSec}`;
+
+        const saltInfo = p.salt_total ? `salt <span>${p.salt || 0}/${p.salt_total}</span>` : `salt <span>${s.salt_current}/${s.salt_end}</span>`;
+        const scoreVal = p.live_score || s.best_score || 0;
+
+        d.innerHTML = `w=<span>${(s.beam||0).toLocaleString()}</span> \u00b7 ${saltInfo}${frameInfo} \u00b7 score: <span style="color:var(--green)">${fmtScore(scoreVal)}</span> \u00b7 <span style="color:var(--cyan)">${timer}</span>${etaInfo}`;
     } else if (runnerStatus && runnerStatus.running) {
         m.innerHTML = '<span style="color:var(--cyan)">\u25b6 BENCHMARKING</span>';
         d.innerHTML = 'Calibrating optimal beam width for your hardware...';
+        _missionSeed = null;
     } else {
         m.innerHTML = '<span style="color:var(--dim)">IDLE</span>';
         d.innerHTML = `Queue: <span>${status.queue_length}</span> items`;
+        _missionSeed = null;
     }
 }
 
@@ -657,6 +708,7 @@ async function refresh() {
             fetch('/api/status').then(r=>r.json()), fetch('/api/stats').then(r=>r.json()),
             fetch('/api/runner').then(r=>r.json()),
         ]);
+        _liveProgress = status.progress || {};
         renderMission(status, runner); renderSeeds(seeds); renderStats(seeds); renderQueue(queue); renderChart(stats);
     } catch(e) { console.error('Refresh:', e); }
 }

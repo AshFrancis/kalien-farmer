@@ -29,11 +29,18 @@ def run_one_salt(
     outdir: Path,
     hw: HardwareInfo,
     threads: int,
+    status_path: Optional[Path] = None,
+    phase: str = "",
+    salt_idx: int = 0,
+    salt_total: int = 1,
 ) -> tuple[int, Optional[str]]:
     """Run a single salt iteration.
 
     Returns ``(score, salt_hex)``.  A score of ``-1`` signals an engine
     failure (distinct from a legitimate score of 0).
+
+    If *status_path* is provided, writes frame-level progress to it so
+    the dashboard can show live updates.
     """
     log_file = outdir / f"log_w{beam}_s{salt}.txt"
     cmd = [
@@ -55,6 +62,7 @@ def run_one_salt(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
             )
             score, salt_hex = 0, f"0x{salt:08x}"
+            current_frame = 0
             for raw in proc.stdout:  # type: ignore[union-attr]
                 line = raw.decode("utf-8", errors="replace")
                 lf.write(line)
@@ -66,6 +74,15 @@ def run_one_salt(
                 m = re.search(r"salt=(0x[0-9a-fA-F]+)", line)
                 if m:
                     salt_hex = m.group(1)
+                m = re.search(r"frame=(\d+)", line)
+                if m and status_path:
+                    current_frame = int(m.group(1))
+                    status_path.write_text(
+                        f"running {seed} {now_iso()} {phase} w={beam} "
+                        f"salt={salt_idx}/{salt_total} "
+                        f"frame={current_frame}/{FRAMES} "
+                        f"score={score}\n"
+                    )
             exit_code = proc.wait()
         if exit_code != 0:
             print(
@@ -125,8 +142,12 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
             f"running {seed} {now_iso()} {phase} w={beam} salt={salt}/{total-1}\n"
         )
 
+        salts_done_so_far = salt - state.get("salt_start_orig", 0)
+        salts_total = state["salt_end"] - state.get("salt_start_orig", 0)
         score, salt_hex = run_one_salt(
-            ctx.binary, seed, beam, salt, outdir, ctx.hw, ctx.threads
+            ctx.binary, seed, beam, salt, outdir, ctx.hw, ctx.threads,
+            status_path=ctx.paths.status, phase=phase,
+            salt_idx=salts_done_so_far, salt_total=salts_total,
         )
 
         if score < 0:

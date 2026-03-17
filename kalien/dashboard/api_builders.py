@@ -122,12 +122,34 @@ def build_api_queue(
 
 def build_api_status(
     state_path: Path,
+    status_path: Path,
     api: KalienAPI,
     queue_path: Path,
 ) -> dict[str, Any]:
     """Build the ``/api/status`` response payload."""
+    state = load_state(state_path) or {}
+    # Parse live frame progress from status.txt
+    progress: dict[str, Any] = {}
+    try:
+        if status_path.exists():
+            line = status_path.read_text().strip()
+            import re
+            m = re.search(r"frame=(\d+)/(\d+)", line)
+            if m:
+                progress["frame"] = int(m.group(1))
+                progress["total_frames"] = int(m.group(2))
+            m = re.search(r"score=(\d+)", line)
+            if m:
+                progress["live_score"] = int(m.group(1))
+            m = re.search(r"salt=(\d+)/(\d+)", line)
+            if m:
+                progress["salt"] = int(m.group(1))
+                progress["salt_total"] = int(m.group(2))
+    except Exception:
+        pass
     return {
-        "state": load_state(state_path) or {},
+        "state": state,
+        "progress": progress,
         "connected": api.is_connected,
         "current_seed_id": api.current_seed_id,
         "queue_length": len(read_queue(queue_path)),

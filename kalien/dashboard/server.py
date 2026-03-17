@@ -109,7 +109,7 @@ class Handler(BaseHTTPRequestHandler):
         elif self.path == "/api/queue":
             self._json(build_api_queue(st.paths.queue, st.api, st.paths.settings))
         elif self.path == "/api/status":
-            self._json(build_api_status(st.paths.state, st.api, st.paths.queue))
+            self._json(build_api_status(st.paths.state, st.paths.status, st.api, st.paths.queue))
         elif self.path == "/api/stats":
             self._json(build_api_stats(st.db))
         elif self.path == "/api/runner":
