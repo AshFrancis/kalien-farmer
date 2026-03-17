@@ -1,5 +1,22 @@
 # Troubleshooting
 
+## macOS: "cannot be opened because it is from an unidentified developer" / malware warning
+
+**Cause:** macOS Gatekeeper blocks unsigned downloaded binaries.
+
+**Fix:**
+
+```bash
+xattr -cr /path/to/kalien-farmer
+chmod +x /path/to/kalien-farmer
+```
+
+Replace `/path/to/kalien-farmer` with the actual path (e.g. `~/Downloads/kalien-farmer`).
+
+If you extracted from a DMG, you may need to copy it somewhere writable first (e.g. your home directory or `/usr/local/bin`).
+
+---
+
 ## "Engine binary not found"
 
 **Message:** `ERROR: Cannot find kalien binary. Use --binary to specify path.`
