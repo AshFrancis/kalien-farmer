@@ -214,6 +214,17 @@ def build_api_tapes(base_path: Path) -> list[dict[str, Any]]:
     return tapes[:200]
 
 
+def _load_benchmark(config_path: Path) -> dict[str, Any]:
+    """Load benchmark.json if it exists."""
+    try:
+        if config_path.exists():
+            import json
+            return json.loads(config_path.read_text())
+    except Exception:
+        pass
+    return {}
+
+
 def build_setup_status(
     engine_search_paths: list[Path],
     settings_path: Path,
@@ -227,12 +238,14 @@ def build_setup_status(
     claimant = settings.get("claimant", "")
     settings_configured = is_valid_claimant(claimant)
     benchmark_done = benchmark_path.exists()
+    benchmark = _load_benchmark(benchmark_path)
     return {
         "engine_found": engine is not None,
         "engine_path": str(engine) if engine else None,
         "settings_configured": settings_configured,
         "claimant": claimant,
         "benchmark_done": benchmark_done,
+        "benchmark": benchmark,
         "os": _detect_os(),
         "python_version": platform.python_version(),
     }

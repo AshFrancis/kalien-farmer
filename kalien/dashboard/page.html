@@ -420,15 +420,21 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
 
     <!-- SETTINGS PAGE -->
     <div class="page" id="page-settings">
-        <div class="mission" style="max-width:500px">
-            <div class="mission-label">CONFIGURATION</div>
-            <div style="margin-top:16px">
-                <label style="font-size:11px;color:var(--dim);letter-spacing:1px">PUSH THRESHOLD</label>
-                <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
-                    <input type="number" id="settingThreshold" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;width:200px">
-                    <button class="ctrl-btn start" onclick="saveSettings()">SAVE</button>
+        <div style="display:flex;gap:20px;flex-wrap:wrap">
+            <div class="mission" style="flex:1;min-width:300px">
+                <div class="mission-label">CONFIGURATION</div>
+                <div style="margin-top:16px">
+                    <label style="font-size:11px;color:var(--dim);letter-spacing:1px">PUSH THRESHOLD</label>
+                    <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
+                        <input type="number" id="settingThreshold" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;width:200px">
+                        <button class="ctrl-btn start" onclick="saveSettings()">SAVE</button>
+                    </div>
+                    <div style="color:var(--dim);font-size:11px;margin-top:6px">Seeds scoring above this in qualify get a full push run. Default: 1,190,000</div>
                 </div>
-                <div style="color:var(--dim);font-size:11px;margin-top:6px">Seeds scoring above this in qualify get a full push run. Default: 1,190,000</div>
+            </div>
+            <div class="mission" style="flex:1;min-width:300px" id="benchmarkInfo">
+                <div class="mission-label">HARDWARE &amp; BENCHMARK</div>
+                <div style="color:var(--dim);margin-top:12px">Loading...</div>
             </div>
         </div>
     </div>
@@ -790,6 +796,32 @@ async function loadSettings() {
     try {
         const s = await fetch('/api/settings').then(r=>r.json());
         document.getElementById('settingThreshold').value = s.push_threshold || 1190000;
+    } catch(e) {}
+    // Load benchmark info
+    try {
+        const setup = await fetch('/api/setup').then(r=>r.json());
+        const el = document.getElementById('benchmarkInfo');
+        const b = setup.benchmark || {};
+        const hw = b.hardware || {};
+        if (!setup.benchmark_done) {
+            el.innerHTML = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
+                '<div style="color:var(--dim);margin-top:12px">No benchmark yet. Click START to auto-benchmark.</div>';
+            return;
+        }
+        const mode = hw.mode === 'gpu'
+            ? `<span style="color:var(--cyan)">GPU</span> \u2014 ${hw.gpu_name || 'Unknown'} (${(hw.gpu_vram_mb||0).toLocaleString()} MB)`
+            : `<span style="color:var(--green)">CPU</span> \u2014 ${hw.cpu_model || 'Unknown'} (${hw.cpu_cores || '?'} cores)`;
+        const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--dim)">${label}</span><span>${value}</span></div>`;
+        el.innerHTML = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
+            '<div style="margin-top:12px">' +
+            row('Mode', mode) +
+            row('Level', `<span style="color:var(--yellow)">${(b.level||'high').toUpperCase()}</span>`) +
+            row('Qualify beam', `<span style="color:var(--cyan)">w=${(b.qualify_beam||0).toLocaleString()}</span> <span style="color:var(--dim)">(~${Math.round((b.qualify_time_est||0)/60)}m${Math.round((b.qualify_time_est||0)%60)}s)</span>`) +
+            row('Push beam', `<span style="color:var(--cyan)">w=${(b.push_beam||0).toLocaleString()}</span> <span style="color:var(--dim)">(~${Math.round((b.push_salt_time_est||0)/60)}m${Math.round((b.push_salt_time_est||0)%60)}s/salt)</span>`) +
+            row('Threads', hw.mode === 'gpu' ? 'N/A (GPU)' : (b.threads||'auto')) +
+            row('Benchmarked', b.timestamp || 'Unknown') +
+            '</div>' +
+            '<div style="margin-top:12px"><button class="ctrl-btn" onclick="ctrlAction(\'stop\');setTimeout(()=>{fetch(\'/api/settings\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({})});showToast(\'Restart runner with --benchmark to re-calibrate\',true)},500)" style="font-size:10px">RE-BENCHMARK</button></div>';
     } catch(e) {}
 }
 async function saveSettings() {
