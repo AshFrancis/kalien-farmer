@@ -9,8 +9,8 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
       - name: Run tests
@@ -30,9 +30,9 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -91,22 +91,16 @@ jobs:
       - name: Package .deb (Linux)
         if: runner.os == 'Linux'
         run: |
+          VERSION=$(echo "${GITHUB_REF_NAME:-v0.1.0}" | sed 's/^v//')
           mkdir -p pkg/usr/local/bin pkg/DEBIAN
           cp dist/kalien-farmer pkg/usr/local/bin/
           chmod +x pkg/usr/local/bin/kalien-farmer
-          cat > pkg/DEBIAN/control << EOF
-          Package: kalien-farmer
-          Version: ${GITHUB_REF_NAME:-0.1.0}
-          Architecture: amd64
-          Maintainer: Kalien Farmer
-          Description: Automated beam search pipeline for kalien.xyz
-          EOF
-          sed -i 's/^          //' pkg/DEBIAN/control
+          printf 'Package: kalien-farmer\nVersion: %s\nArchitecture: amd64\nMaintainer: Kalien Farmer\nDescription: Automated beam search pipeline for kalien.xyz\n' "$VERSION" > pkg/DEBIAN/control
           dpkg-deb --build pkg dist/kalien-farmer-${{ matrix.name }}.deb
 
       # ── Upload all artifacts ──
       - name: Upload
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: kalien-farmer-${{ matrix.name }}
           path: |
@@ -123,7 +117,7 @@ jobs:
       contents: write
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
