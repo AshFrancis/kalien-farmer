@@ -6,39 +6,28 @@ Automated beam search pipeline for [kalien.xyz](https://kalien.xyz) -- a ZK-proo
 
 ## Quick Start
 
-**Already downloaded?** Just run:
 ```
-python3 setup.py && python3 kalien-farmer.py
-```
-
-**From scratch (one line):**
-
-macOS / Linux:
-```bash
-curl -fsSL https://raw.githubusercontent.com/AshFrancis/kalien-farmer/main/install.sh | sh
+git clone https://github.com/AshFrancis/kalien-farmer.git
+cd kalien-farmer
+python3 setup.py
+python3 kalien-farmer.py
 ```
 
-Windows — download and double-click `install.bat`, or:
-```powershell
-git clone https://github.com/AshFrancis/kalien-farmer.git; cd kalien-farmer; python setup.py; python kalien-farmer.py
-```
+`setup.py` checks your system, builds the engine, and walks you through configuration. `kalien-farmer.py` opens a web dashboard on [localhost:8420](http://localhost:8420) -- click **START** to begin.
 
-The installer handles everything: checks for Python, installs a C++ compiler if needed, builds the engine, and walks you through configuration. The farmer opens a web dashboard on [localhost:8420](http://localhost:8420) -- click **START** to begin.
+**Or download a prebuilt release** from the [Releases](https://github.com/AshFrancis/kalien-farmer/releases) page -- no Python or compiler needed.
 
 ## What Does Setup Do?
 
-1. Checks for Python 3.8+ (installs it if missing on macOS/Linux)
-2. Checks for a C++ compiler (tells you exactly how to install one)
-3. Detects NVIDIA GPU + CUDA (optional -- CPU works fine)
-4. Builds the beam search engine
-5. Asks for your Stellar address (to receive rewards)
-
-If anything is missing, it gives you the exact command to fix it for your OS.
+1. Checks for Python 3.8+ and a C++ compiler (tells you how to install if missing)
+2. Detects NVIDIA GPU + CUDA (optional -- CPU works fine)
+3. Builds the beam search engine for your platform
+4. Asks for your Stellar address (to receive rewards)
 
 ## Requirements
 
 - **Python 3.8+** (no pip packages needed -- stdlib only)
-- **C++ compiler** -- comes with Xcode (macOS), build-essential (Linux), or Visual Studio Build Tools (Windows)
+- **C++ compiler** -- Xcode (macOS), build-essential (Linux), or Visual Studio Build Tools (Windows)
 - **Optional:** NVIDIA GPU with CUDA 12.x for faster search
 
 ## Documentation
