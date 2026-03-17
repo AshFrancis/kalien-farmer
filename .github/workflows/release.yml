@@ -116,15 +116,21 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
+
       - name: Download all artifacts
         uses: actions/download-artifact@v5
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Delete existing release (if any)
+        run: gh release delete "${{ github.ref_name }}" --yes || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            kalien-farmer-windows-x64/*.zip
-            kalien-farmer-macos-arm64/*.dmg
-            kalien-farmer-linux-x64/*.tar.gz
-            kalien-farmer-linux-x64/*.deb
+          files: dist/*
           generate_release_notes: true
