@@ -1,0 +1,16 @@
+# Build artifacts
+engine/kalien
+engine/kalien.exe
+engine/*.o
+engine/*.obj
+
+# Runtime data
+tapes/
+
+# Python
+__pycache__/
+*.pyc
+
+# OS
+.DS_Store
+Thumbs.db

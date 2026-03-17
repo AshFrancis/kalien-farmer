@@ -1,0 +1,136 @@
+name: Build & Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run tests
+        run: python -m unittest discover tests -v
+
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x64
+          - os: macos-latest
+            name: macos-arm64
+          - os: windows-latest
+            name: windows-x64
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyInstaller
+        run: pip install pyinstaller
+
+      # ── Build C++ engine ──
+      - name: Build engine (macOS/Linux)
+        if: runner.os != 'Windows'
+        working-directory: engine
+        run: make CPU=1
+
+      - name: Build engine (Windows)
+        if: runner.os == 'Windows'
+        working-directory: engine
+        shell: cmd
+        run: |
+          call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
+          cl /O2 /DNDEBUG /EHsc /std:c++17 /DCPU_ONLY kalien.cpp /Fe:kalien.exe
+
+      # ── Bundle into single executable ──
+      - name: Build with PyInstaller
+        run: pyinstaller kalien-farmer.spec
+
+      - name: Smoke test
+        shell: bash
+        run: |
+          if [ -f dist/kalien-farmer ]; then ./dist/kalien-farmer --help; fi
+          if [ -f dist/kalien-farmer.exe ]; then ./dist/kalien-farmer.exe --help; fi
+
+      # ── Platform-specific packages ──
+
+      # Windows: .zip
+      - name: Package .zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path dist/kalien-farmer.exe -DestinationPath dist/kalien-farmer-${{ matrix.name }}.zip
+
+      # macOS: .dmg
+      - name: Package .dmg (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist/dmg
+          cp dist/kalien-farmer dist/dmg/
+          hdiutil create -volname "Kalien Farmer" \
+            -srcfolder dist/dmg \
+            -ov -format UDZO \
+            dist/kalien-farmer-${{ matrix.name }}.dmg
+
+      # Linux: .tar.gz + .deb
+      - name: Package .tar.gz (Linux)
+        if: runner.os == 'Linux'
+        run: cd dist && tar czf kalien-farmer-${{ matrix.name }}.tar.gz kalien-farmer
+
+      - name: Package .deb (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p pkg/usr/local/bin pkg/DEBIAN
+          cp dist/kalien-farmer pkg/usr/local/bin/
+          chmod +x pkg/usr/local/bin/kalien-farmer
+          cat > pkg/DEBIAN/control << EOF
+          Package: kalien-farmer
+          Version: ${GITHUB_REF_NAME:-0.1.0}
+          Architecture: amd64
+          Maintainer: Kalien Farmer
+          Description: Automated beam search pipeline for kalien.xyz
+          EOF
+          sed -i 's/^          //' pkg/DEBIAN/control
+          dpkg-deb --build pkg dist/kalien-farmer-${{ matrix.name }}.deb
+
+      # ── Upload all artifacts ──
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: kalien-farmer-${{ matrix.name }}
+          path: |
+            dist/kalien-farmer-*.zip
+            dist/kalien-farmer-*.dmg
+            dist/kalien-farmer-*.tar.gz
+            dist/kalien-farmer-*.deb
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            kalien-farmer-windows-x64/*.zip
+            kalien-farmer-macos-arm64/*.dmg
+            kalien-farmer-linux-x64/*.tar.gz
+            kalien-farmer-linux-x64/*.deb
+          generate_release_notes: true
