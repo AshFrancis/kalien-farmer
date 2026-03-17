@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Optional
@@ -12,7 +13,7 @@ from kalien.api_client import KalienAPI
 from kalien.config import (
     DEFAULT_PUSH_THRESHOLD,
     MIN_REMAINING_HOURS,
-    PUSH_SALTS,
+    PUSH_TIERS,
     QUALIFY_SALTS,
     RunnerPaths,
     ensure_data_dir,
@@ -53,6 +54,7 @@ class RunnerContext:
         self.claimant = claimant
         self.api = KalienAPI(log_fn=self.log)
         self.db = Database(paths.db)
+        self._phase_start_time: float = 0.0
         self._log_fh: Any = None
 
     def close(self) -> None:
@@ -114,15 +116,24 @@ def handle_phase_completion(state: dict[str, Any], ctx: RunnerContext) -> None:
         )
         threshold = ctx.get_push_threshold()
         if state["best_score"] > threshold:
-            ctx.log(
-                f"*** {seed} qualified with {state['best_score']:,} — "
-                f"queuing push w={ctx.push_beam}x{PUSH_SALTS} ***"
+            # Queue time-boxed push tiers (widest first so it runs last)
+            for tier in reversed(PUSH_TIERS):
+                beam = tier["beam"]
+                hours = tier["hours"]
+                # Use a large salt count — the time limit will stop it
+                salts = 9999
+                ctx.log(
+                    f"*** {seed} qualified with {state['best_score']:,} — "
+                    f"queuing push w={beam:,} ({hours}h time-boxed) ***"
+                )
+                push_queue_front(
+                    ctx.paths.queue,
+                    f"{seed}:{sid}:{salts}:0:{beam}",
+                )
+            ctx.db.update_push(
+                seed, "queued", beam=PUSH_TIERS[0]["beam"],
+                salts_total=0,
             )
-            push_queue_front(
-                ctx.paths.queue,
-                f"{seed}:{sid}:{PUSH_SALTS}:0:{ctx.push_beam}",
-            )
-            ctx.db.update_push(seed, "queued", beam=ctx.push_beam, salts_total=PUSH_SALTS)
     else:
         total = state["salt_end"] - state.get("salt_start_orig", 0)
         ctx.db.update_push(
@@ -147,6 +158,18 @@ def try_resume(ctx: RunnerContext, push_time_est_seconds: float) -> None:
     if not state or not state.get("phase") or not state.get("seed"):
         return
 
+    # Skip if this seed was already qualified (re-run after dedup fix)
+    if state["phase"] == "qualify":
+        with ctx.db.connect() as conn:
+            row = conn.execute(
+                "SELECT qualify_score FROM seeds WHERE seed_hex=?",
+                (state["seed"],),
+            ).fetchone()
+        if row and row[0] > 0:
+            ctx.log(f"RESUME skipped — {state['seed']} already qualified ({row[0]:,})")
+            clear_state(ctx.paths.state)
+            return
+
     salts_left = state["salt_end"] - state["salt_current"]
     ok, rem, _needed = ctx.api.enough_time(
         state["seed_id"], salts_left, push_time_est_seconds
@@ -162,6 +185,7 @@ def try_resume(ctx: RunnerContext, push_time_est_seconds: float) -> None:
         f"salt={state['salt_current']}/{state['salt_end']}"
     )
     start = time.time()
+    ctx._phase_start_time = start
     state = run_phase(state, ctx)
     state["elapsed"] = int(time.time() - start)
 
@@ -181,6 +205,17 @@ def process_one_seed(ctx: RunnerContext) -> bool:
     if line is None:
         csid, cseed = ctx.api.get_current_seed()
         if csid and cseed:
+            # Skip seeds we've already qualified — wait for a new one
+            with ctx.db.connect() as conn:
+                row = conn.execute(
+                    "SELECT qualify_score FROM seeds WHERE seed_hex=?",
+                    (cseed,),
+                ).fetchone()
+            if row and row[0] > 0:
+                ctx.paths.status.write_text(
+                    f"idle {now_iso()} waiting for new seed\n"
+                )
+                return False
             ctx.log(f"Queue empty — fetching current seed {cseed}")
             line = f"{cseed}:{csid}"
         else:
@@ -203,7 +238,7 @@ def process_one_seed(ctx: RunnerContext) -> bool:
     # Determine phase
     if entry.beam and entry.beam > ctx.qualify_beam:
         phase, beam = "push", entry.beam
-        salts = entry.salts or PUSH_SALTS
+        salts = entry.salts or 9999
         s_start = entry.salt_start
     elif entry.salts is not None:
         phase, beam = "push", entry.beam or ctx.push_beam
@@ -212,6 +247,17 @@ def process_one_seed(ctx: RunnerContext) -> bool:
     else:
         phase, beam = "qualify", ctx.qualify_beam
         salts, s_start = QUALIFY_SALTS, 0
+
+    # Determine time limit for push runs
+    time_limit_seconds = 0
+    if phase == "push":
+        # Match beam to a tier, or default to 3 hours
+        for tier in PUSH_TIERS:
+            if beam <= tier["beam"]:
+                time_limit_seconds = tier["hours"] * 3600
+                break
+        if not time_limit_seconds:
+            time_limit_seconds = PUSH_TIERS[-1]["hours"] * 3600
 
     outdir = ctx.paths.base / entry.seed.lower()
     state: dict[str, Any] = {
@@ -226,19 +272,28 @@ def process_one_seed(ctx: RunnerContext) -> bool:
         "best_salt": "unknown",
         "outdir": str(outdir),
         "started": now_iso(),
+        "time_limit": time_limit_seconds,
     }
     save_state(ctx.paths.state, state)
 
     if phase == "push":
         ctx.db.update_push(entry.seed, "running", beam=beam, salts_total=salts)
 
-    ctx.log(
-        f"{phase.upper()} {entry.seed} "
-        f"(id={entry.seed_id}, w={beam}, salts={s_start}..{s_start + salts - 1}, "
-        f"{rem:.0f}min left)"
-    )
+    if time_limit_seconds:
+        ctx.log(
+            f"{phase.upper()} {entry.seed} "
+            f"(id={entry.seed_id}, w={beam:,}, {time_limit_seconds // 3600}h time-boxed, "
+            f"{rem:.0f}min left)"
+        )
+    else:
+        ctx.log(
+            f"{phase.upper()} {entry.seed} "
+            f"(id={entry.seed_id}, w={beam:,}, salts={s_start}..{s_start + salts - 1}, "
+            f"{rem:.0f}min left)"
+        )
 
     start = time.time()
+    ctx._phase_start_time = start
     state = run_phase(state, ctx)
     state["elapsed"] = int(time.time() - start)
 
@@ -361,10 +416,27 @@ def main() -> None:
     try_resume(ctx, push_time_est_seconds)
 
     # Main loop
+    consecutive_errors = 0
+    waiting_logged = False
     while True:
         ctx.check_pause()
-        if not process_one_seed(ctx):
-            time.sleep(15)
+        try:
+            processed = process_one_seed(ctx)
+            consecutive_errors = 0
+            if processed:
+                waiting_logged = False
+            else:
+                if not waiting_logged:
+                    ctx.log("Waiting for new seed (seeds rotate every ~10 min)...")
+                    waiting_logged = True
+                time.sleep(15)
+        except Exception as e:
+            consecutive_errors += 1
+            ctx.log(f"ERROR in main loop: {e}")
+            ctx.log(traceback.format_exc())
+            backoff = min(60, 15 * consecutive_errors)
+            ctx.log(f"Retrying in {backoff}s...")
+            time.sleep(backoff)
 
 
 if __name__ == "__main__":

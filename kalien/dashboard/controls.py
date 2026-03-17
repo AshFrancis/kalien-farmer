@@ -73,8 +73,10 @@ def _run_in_thread(state: DashboardState, engine_path: str) -> None:
     except (SystemExit, KeyboardInterrupt):
         pass
     except Exception as e:
+        import traceback
         with open(state.paths.log, "a") as f:
             f.write(f"Runner thread error: {e}\n")
+            f.write(traceback.format_exc() + "\n")
 
 
 def action_start(state: DashboardState) -> dict[str, Any]:
@@ -229,6 +231,23 @@ def action_add_seed(
         "ok": True,
         "msg": f"Added {seed} (w={beam}, {salts} salts) to front of queue",
     }
+
+
+def action_remove_queue(
+    state: DashboardState, data: dict[str, Any]
+) -> dict[str, Any]:
+    """Remove a queue entry by position (1-based)."""
+    pos = int(data.get("pos", 0))
+    if pos < 1:
+        return {"ok": False, "msg": "Invalid position"}
+    with queue_lock(state.paths.queue):
+        lines = read_queue(state.paths.queue)
+        if pos > len(lines):
+            return {"ok": False, "msg": f"Position {pos} out of range ({len(lines)} items)"}
+        removed = lines.pop(pos - 1)
+        state.paths.queue.write_text("\n".join(lines) + "\n" if lines else "")
+    seed = removed.split(":")[0] if removed else "?"
+    return {"ok": True, "msg": f"Removed #{pos} ({seed}) from queue"}
 
 
 def action_get_runner_status(state: DashboardState) -> dict[str, Any]:

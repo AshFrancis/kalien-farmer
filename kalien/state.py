@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any, Optional
 
@@ -12,7 +13,7 @@ def save_state(path: Path, state: dict[str, Any]) -> None:
     """Atomically write *state* to *path* via a temp-file rename."""
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(state, indent=2))
-    tmp.rename(path)
+    os.replace(tmp, path)
 
 
 def load_state(path: Path) -> Optional[dict[str, Any]]:

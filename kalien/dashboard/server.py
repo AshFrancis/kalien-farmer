@@ -34,6 +34,7 @@ from kalien.dashboard.controls import (
     action_add_seed,
     action_get_runner_status,
     action_pause,
+    action_remove_queue,
     action_resume,
     action_start,
     action_stop,
@@ -146,6 +147,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/pause": lambda: action_pause(st),
             "/api/resume": lambda: action_resume(st),
             "/api/add_seed": lambda: action_add_seed(st, body),
+            "/api/remove_queue": lambda: action_remove_queue(st, body),
             "/api/settings": lambda: save_settings(st.paths.settings, body),
         }
         handler = actions.get(self.path)
