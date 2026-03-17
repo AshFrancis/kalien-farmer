@@ -824,11 +824,13 @@ async function refreshSetup() {
         _setupData = s;
         // Render the setup tab page
         document.getElementById('setupContent').innerHTML = renderSetupHTML(s, false);
-        // Show overlay on first load if engine or claimant missing
+        // Show/hide overlay based on setup completeness
+        const overlay = document.getElementById('setupOverlay');
         if (!s.engine_found || !s.settings_configured) {
-            const overlay = document.getElementById('setupOverlay');
             document.getElementById('setupOverlayContent').innerHTML = renderSetupHTML(s, true);
             overlay.classList.add('active');
+        } else {
+            overlay.classList.remove('active');
         }
     } catch(e) { console.error('Setup refresh:', e); }
 }
