@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
@@ -164,12 +165,39 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
             state["best_salt"] = salt_hex or f"0x{salt:08x}"
             ctx.log(f"  NEW BEST: {score} (salt={state['best_salt']})")
 
+            # Submit immediately on each new best during push
+            if phase == "push":
+                from kalien.submission import SubmitError, submit_best_from_dir
+                try:
+                    submit_best_from_dir(
+                        str(outdir), sid, seed, ctx.claimant, ctx.db,
+                        log_fn=ctx.log,
+                    )
+                except Exception as e:
+                    ctx.log(f"  Submit error: {e}")
+
         state["salt_current"] = salt + 1
         save_state(ctx.paths.state, state)
 
         if phase == "push":
             salts_done = state["salt_current"] - state.get("salt_start_orig", 0)
             salts_total = state["salt_end"] - state.get("salt_start_orig", 0)
+
+            # Time-box check: stop if we've exceeded the time limit
+            time_limit = state.get("time_limit", 0)
+            if time_limit > 0:
+                elapsed = time.time() - ctx._phase_start_time
+                if elapsed >= time_limit:
+                    hours = time_limit / 3600
+                    ctx.log(
+                        f"  TIME LIMIT: {hours:.0f}h reached after {salts_done} salts "
+                        f"— best={state['best_score']:,}"
+                    )
+                    # Adjust salt_end so handle_phase_completion sees correct totals
+                    state["salt_end"] = state["salt_current"]
+                    save_state(ctx.paths.state, state)
+                    return state
+
             ctx.db.update_push(
                 seed,
                 "running",

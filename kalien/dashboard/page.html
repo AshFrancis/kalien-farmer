@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KALIEN FARMER</title>
+<link rel="icon" type="image/png" href="https://kalien.xyz/favicon.png">
 <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
@@ -395,7 +396,7 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
         <div class="table-wrap">
             <table>
                 <thead><tr>
-                    <th>#</th><th>SEED</th><th>TYPE</th><th>BEAM</th><th>SALTS</th><th>EXPIRES</th><th>EST TIME</th>
+                    <th>#</th><th>SEED</th><th>TYPE</th><th>BEAM</th><th>SALTS</th><th>EXPIRES</th><th>EST TIME</th><th></th>
                 </tr></thead>
                 <tbody id="queueBody"></tbody>
             </table>
@@ -605,7 +606,8 @@ function renderQueue(queue) {
             <td><span class="queue-type ${q.type==='push'?'type-push':'type-qualify'}">${q.type.toUpperCase()}</span></td>
             <td>w=${q.beam.toLocaleString()}</td><td>${q.salts}</td>
             <td style="color:${exp?'var(--red)':q.remaining_min<240?'var(--yellow)':'inherit'}">${fmtDuration(q.remaining_min)}</td>
-            <td style="color:var(--dim)">~${fmtDuration(est)}</td></tr>`;
+            <td style="color:var(--dim)">~${fmtDuration(est)}</td>
+            <td><button class="ctrl-btn stop" style="font-size:9px;padding:3px 8px;letter-spacing:1px" onclick="removeQueue(${q.pos})">✕</button></td></tr>`;
     }).join('');
 }
 
@@ -784,6 +786,15 @@ async function submitAddSeed() {
         const data = await fetch('/api/add_seed', {method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({seed, seed_id: sid, beam, salts})}).then(r=>r.json());
         showToast(data.msg, data.ok); if (data.ok) closeAddSeed();
+    } catch(e) { showToast('Failed: '+e, false); }
+}
+
+async function removeQueue(pos) {
+    try {
+        const data = await fetch('/api/remove_queue', {method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({pos})}).then(r=>r.json());
+        showToast(data.msg, data.ok);
+        refresh();
     } catch(e) { showToast('Failed: '+e, false); }
 }
 

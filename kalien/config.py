@@ -39,7 +39,13 @@ MIN_REMAINING_HOURS: int = 4
 MIN_REMAINING_FINISH_MINUTES: int = 30
 EXPIRY_RECHECK_SALTS: int = 5
 QUALIFY_SALTS: int = 1
-PUSH_SALTS: int = 30
+
+# Push runs are time-boxed, not salt-count-limited.
+# Two tiers based on beam width, running unlimited salts until time expires.
+PUSH_TIERS: list[dict] = [
+    {"beam": 65536, "hours": 3},
+    {"beam": 131072, "hours": 6},
+]
 
 HORIZON: int = 20
 FRAMES: int = 36_000

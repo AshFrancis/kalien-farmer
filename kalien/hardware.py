@@ -162,8 +162,9 @@ def run_benchmark(
 
     # Qualify: must finish in <9 min (540 s) for 1 salt
     max_qualify = int(test_beam * (540 / elapsed) * 0.85)
-    # Push: must finish in <4 hrs (14400 s) for 30 salts -> 480 s per salt
-    max_push = int(test_beam * (480 / elapsed) * 0.85)
+    # Push: wider beam, fewer salts — width beats depth
+    # Target: 10 salts at 3× qualify beam, total ~8 hours
+    max_push = max_qualify * 3
 
     if level == "low":
         max_qualify //= 2
