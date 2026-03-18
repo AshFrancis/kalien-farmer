@@ -489,9 +489,10 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
         <input type="number" id="seedId" placeholder="e.g. 2955973">
         <label>BEAM WIDTH</label>
         <select id="seedBeam">
-            <option value="32768">32,768 (qualify)</option>
-            <option value="65536" selected>65,536 (push)</option>
-            <option value="131072">131,072 (ultrawide)</option>
+            <option value="0" selected>Auto (from settings)</option>
+            <option value="32768">32,768</option>
+            <option value="65536">65,536</option>
+            <option value="131072">131,072</option>
         </select>
         <label>SALTS</label>
         <input type="number" id="seedSalts" value="30" min="1" max="100">

@@ -11,8 +11,6 @@ from kalien.config import DEFAULT_PUSH_THRESHOLD
 DEFAULT_SETTINGS: dict[str, Any] = {
     "claimant": "",
     "push_threshold": DEFAULT_PUSH_THRESHOLD,
-    "qualify_beam": 32768,
-    "push_beam": 65536,
 }
 
 CLAIMANT_PLACEHOLDERS: set[str] = {"", "YOUR_STELLAR_ADDRESS_HERE", "YOUR_ADDRESS_HERE"}

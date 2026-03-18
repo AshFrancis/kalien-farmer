@@ -200,9 +200,7 @@ def action_add_seed(
     """Add a seed to the front of the queue."""
     seed = data.get("seed", "").strip().upper().replace("0X", "")
     settings = load_settings(state.paths.settings)
-    beam = int(
-        data.get("beam", settings.get("push_beam", DEFAULT_SETTINGS["push_beam"]))
-    )
+    beam = int(data.get("beam", 0) or settings.get("push_beam", 0) or 65536)
     salts = int(data.get("salts", 30))
     if (
         not seed
