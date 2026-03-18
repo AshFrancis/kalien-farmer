@@ -62,6 +62,10 @@ class KalienAPI:
                 headers={"User-Agent": USER_AGENT},
             )
             data = json.loads(urlopen(req, timeout=10).read())
+            if not data.get("seed") and data.get("seed") != 0:
+                # Seed not indexed yet — return cached or None
+                self._connected = True
+                return self._seed_cache.seed_id or None, self._seed_cache.seed_hex
             sid, shex = data["seed_id"], f"{data['seed']:08X}"
             self._seed_cache = SeedCacheEntry(timestamp=now, seed_id=sid, seed_hex=shex)
             self._connected = True
@@ -80,6 +84,8 @@ class KalienAPI:
             )
             resp = urlopen(req, timeout=5)
             data = json.loads(resp.read())
+            if not data.get("seed") and data.get("seed") != 0:
+                return  # seed not indexed yet
             self._seed_cache = SeedCacheEntry(
                 timestamp=time.time(),
                 seed_id=data["seed_id"],
