@@ -182,12 +182,17 @@ def try_resume(ctx: RunnerContext, push_time_est_seconds: float) -> None:
             clear_state(ctx.paths.state)
             return
 
-    salts_left = state["salt_end"] - state["salt_current"]
-    ok, rem, _needed = ctx.api.enough_time(
-        state["seed_id"], salts_left, push_time_est_seconds
-    )
-    if not ok:
-        ctx.log(f"RESUME skipped — {state['seed']} expired ({rem:.0f} min left)")
+    # Check if seed has enough time left
+    rem = ctx.api.seed_remaining_minutes(state["seed_id"])
+    time_limit = state.get("time_limit", 0)
+    if time_limit > 0:
+        # Time-boxed run: just need time_limit minutes remaining
+        needed = time_limit / 60
+    else:
+        salts_left = state["salt_end"] - state["salt_current"]
+        needed = salts_left * (push_time_est_seconds / 60) + 30
+    if rem < needed:
+        ctx.log(f"RESUME skipped — {state['seed']} expired ({rem:.0f} min left, need {needed:.0f})")
         ctx.db.update_push(state["seed"], "expired")
         clear_state(ctx.paths.state)
         return
