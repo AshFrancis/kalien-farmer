@@ -186,8 +186,9 @@ def try_resume(ctx: RunnerContext, push_time_est_seconds: float) -> None:
     rem = ctx.api.seed_remaining_minutes(state["seed_id"])
     time_limit = state.get("time_limit", 0)
     if time_limit > 0:
-        # Time-boxed run: just need time_limit minutes remaining
-        needed = time_limit / 60
+        # Time-boxed run: need remaining budget (limit minus already computed)
+        already = state.get("push_elapsed_total", 0)
+        needed = max(0, (time_limit - already)) / 60
     else:
         salts_left = state["salt_end"] - state["salt_current"]
         needed = salts_left * (push_time_est_seconds / 60) + 30

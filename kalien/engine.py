@@ -194,17 +194,22 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
                 time_limit = DEFAULT_PUSH_HOURS * 3600
                 state["time_limit"] = time_limit
             if time_limit > 0:
-                elapsed = time.time() - ctx._phase_start_time
-                if elapsed >= time_limit:
+                # Track cumulative compute time across stop/resume cycles
+                session_elapsed = time.time() - ctx._phase_start_time
+                prior_elapsed = state.get("push_elapsed_total", 0)
+                total_elapsed = prior_elapsed + session_elapsed
+                if total_elapsed >= time_limit:
                     hours = time_limit / 3600
                     ctx.log(
                         f"  TIME LIMIT: {hours:.0f}h reached after {salts_done} salts "
-                        f"— best={state['best_score']:,}"
+                        f"({total_elapsed/3600:.1f}h compute) — best={state['best_score']:,}"
                     )
-                    # Adjust salt_end so handle_phase_completion sees correct totals
                     state["salt_end"] = state["salt_current"]
+                    state["push_elapsed_total"] = total_elapsed
                     save_state(ctx.paths.state, state)
                     return state
+                # Save cumulative time so it persists across restarts
+                state["push_elapsed_total"] = total_elapsed
 
             ctx.db.update_push(
                 seed,
