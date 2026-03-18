@@ -822,11 +822,13 @@ function arrayBufferToBase64(buffer) {
 function saveBenchmark(data) {
     localStorage.setItem('kalien_benchmark', JSON.stringify(data));
 }
+const WASM_MAX_BEAM = 24576;
 function loadBenchmark() {
     try {
         const d = JSON.parse(localStorage.getItem('kalien_benchmark'));
         if (!d || Date.now() - d.ts > 7 * 86400000) return null;
         if (d.cores !== navigator.hardwareConcurrency) return null;
+        if (d.beam > WASM_MAX_BEAM) { d.beam = WASM_MAX_BEAM; }
         return d;
     } catch { return null; }
 }
