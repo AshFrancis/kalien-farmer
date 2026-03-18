@@ -93,8 +93,8 @@ def build_api_queue(
     queue = read_queue(queue_path)
     csid = api.current_seed_id
     settings = load_settings(settings_path)
-    qualify_beam: int = settings.get("qualify_beam", DEFAULT_SETTINGS["qualify_beam"])
-    push_beam: int = settings.get("push_beam", DEFAULT_SETTINGS["push_beam"])
+    qualify_beam: int = settings.get("qualify_beam", 32768)
+    push_beam: int = settings.get("push_beam", 65536)
 
     result: list[dict[str, Any]] = []
     for i, line in enumerate(queue):
