@@ -94,7 +94,8 @@ self.onmessage = function (e) {
             );
             currentPhase = "idle";
             self.postMessage(
-                { type: "result", score, tapeBytes, elapsed, seed: msg.seed, seedId: msg.seedId, phase: msg.phase || "qualify" },
+                { type: "result", score, tapeBytes, elapsed, seed: msg.seed, seedId: msg.seedId,
+                  phase: msg.phase || "qualify", pushSalt: msg.pushSalt || 0, pushTotal: msg.pushTotal || 0 },
                 [tapeBytes]
             );
         } catch (e) {

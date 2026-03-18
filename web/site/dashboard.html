@@ -445,18 +445,18 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
                     <div style="color:var(--dim);font-size:11px;margin-top:6px">Seeds scoring above this in qualify get a push run. Default: 1,190,000</div>
                 </div>
                 <div style="margin-top:16px">
-                    <label style="font-size:11px;color:var(--dim);letter-spacing:1px">PUSH BEAM MULTIPLIER</label>
+                    <label style="font-size:11px;color:var(--dim);letter-spacing:1px">PUSH EXTRA SALTS</label>
                     <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
                         <select id="settingPushMultiplier" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;width:200px">
                             <option value="0">Disabled (qualify only)</option>
-                            <option value="2">2× qualify beam</option>
-                            <option value="3">3× qualify beam</option>
-                            <option value="4" selected>4× qualify beam</option>
-                            <option value="6">6× qualify beam</option>
-                            <option value="8">8× qualify beam</option>
+                            <option value="2">2 extra salts</option>
+                            <option value="3">3 extra salts</option>
+                            <option value="4" selected>4 extra salts</option>
+                            <option value="6">6 extra salts</option>
+                            <option value="8">8 extra salts</option>
                         </select>
                     </div>
-                    <div style="color:var(--dim);font-size:11px;margin-top:6px">After qualify, run 1 push salt at this multiple of your calibrated beam width. Higher = better score but slower.</div>
+                    <div style="color:var(--dim);font-size:11px;margin-top:6px">After qualify, run extra salts at the same beam width to find a better path. Each salt takes ~1 qualify run.</div>
                 </div>
             </div>
             <div class="mission" style="flex:1;min-width:300px" id="benchmarkInfo">
@@ -1020,33 +1020,37 @@ async function handleResult(msg) {
         logMsg('Record error: ' + e.message, 'red');
     }
 
-    // Check if we should do a push run (1 salt at higher beam)
-    const pushMult = getPushMultiplier();
+    // Check if we should do push runs (extra salts at same beam to find better paths)
+    const pushSalts = getPushMultiplier();  // reuse setting as extra salt count
     const pushThreshold = parseInt(document.getElementById('settingThreshold').value) || 1190000;
     const wasQualify = !msg.phase || msg.phase === 'qualify';
-    if (wasQualify && pushMult > 0 && score > pushThreshold && benchmarkData && farming && !stopping) {
-        const pushBeam = benchmarkData.beam * pushMult;
-        // Estimate push time — skip if it would exceed 30 minutes
-        const qualifySeconds = parseFloat(msg.elapsed) || 0;
-        const estPushSeconds = qualifySeconds * pushMult;
-        if (estPushSeconds > 1800) {
-            logMsg('Push w=' + pushBeam.toLocaleString() + ' would take ~' + Math.round(estPushSeconds / 60) + 'min — skipping (>30min limit)', 'yellow');
-        } else {
-            logMsg('*** Score ' + score.toLocaleString() + ' > threshold — PUSH w=' + pushBeam.toLocaleString() + ' (~' + Math.round(estPushSeconds / 60) + 'min) ***', 'yellow');
-            _liveProgress = {};
-            _missionStartTime = Date.now();
-            renderMission();
-            worker.postMessage({
-                type: 'run',
-                seed: msg.seed,
-                seedId: msg.seedId,
-                salt: 1,
-                beam: pushBeam,
-                threads: 0,
-                phase: 'push',
-            });
-            return;
-        }
+    const isPush = msg.phase === 'push';
+    const pushSaltsDone = (msg.pushSalt || 0);
+
+    if (isPush && pushSaltsDone < pushSalts && farming && !stopping) {
+        // Continue push — run next salt
+        const nextSalt = pushSaltsDone + 1;
+        logMsg('  Push salt ' + (nextSalt + 1) + '/' + (pushSalts + 1) + ' (w=' + benchmarkData.beam.toLocaleString() + ')');
+        _liveProgress = {};
+        _missionStartTime = Date.now();
+        worker.postMessage({
+            type: 'run', seed: msg.seed, seedId: msg.seedId,
+            salt: nextSalt + 1, beam: benchmarkData.beam, threads: 0,
+            phase: 'push', pushSalt: nextSalt, pushTotal: pushSalts,
+        });
+        return;
+    }
+
+    if (wasQualify && pushSalts > 0 && score > pushThreshold && benchmarkData && farming && !stopping) {
+        logMsg('*** Score ' + score.toLocaleString() + ' > threshold — running ' + pushSalts + ' extra salts ***', 'yellow');
+        _liveProgress = {};
+        _missionStartTime = Date.now();
+        worker.postMessage({
+            type: 'run', seed: msg.seed, seedId: msg.seedId,
+            salt: 1, beam: benchmarkData.beam, threads: 0,
+            phase: 'push', pushSalt: 0, pushTotal: pushSalts,
+        });
+        return;
     }
 
     // Clear current seed
