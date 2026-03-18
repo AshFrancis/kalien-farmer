@@ -184,7 +184,17 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
             salts_total = state["salt_end"] - state.get("salt_start_orig", 0)
 
             # Time-box check: stop if we've exceeded the time limit
+            # Default to matching tier if not set (handles old state files)
             time_limit = state.get("time_limit", 0)
+            if time_limit == 0 and phase == "push":
+                from kalien.config import PUSH_TIERS
+                for tier in PUSH_TIERS:
+                    if beam <= tier["beam"]:
+                        time_limit = tier["hours"] * 3600
+                        break
+                if not time_limit:
+                    time_limit = PUSH_TIERS[-1]["hours"] * 3600
+                state["time_limit"] = time_limit
             if time_limit > 0:
                 elapsed = time.time() - ctx._phase_start_time
                 if elapsed >= time_limit:

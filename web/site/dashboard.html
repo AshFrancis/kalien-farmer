@@ -1024,20 +1024,27 @@ async function handleResult(msg) {
     const wasQualify = !msg.phase || msg.phase === 'qualify';
     if (wasQualify && pushMult > 0 && score > pushThreshold && benchmarkData && farming && !stopping) {
         const pushBeam = benchmarkData.beam * pushMult;
-        logMsg('*** Score ' + score.toLocaleString() + ' > threshold — PUSH w=' + pushBeam.toLocaleString() + ' ***', 'yellow');
-        _liveProgress = {};
-        _missionStartTime = Date.now();
-        renderMission();
-        worker.postMessage({
-            type: 'run',
-            seed: msg.seed,
-            seedId: msg.seedId,
-            salt: 1,  // different salt than qualify
-            beam: pushBeam,
-            threads: 0,
-            phase: 'push',
-        });
-        return;
+        // Estimate push time — skip if it would exceed 30 minutes
+        const qualifySeconds = parseFloat(msg.elapsed) || 0;
+        const estPushSeconds = qualifySeconds * pushMult;
+        if (estPushSeconds > 1800) {
+            logMsg('Push w=' + pushBeam.toLocaleString() + ' would take ~' + Math.round(estPushSeconds / 60) + 'min — skipping (>30min limit)', 'yellow');
+        } else {
+            logMsg('*** Score ' + score.toLocaleString() + ' > threshold — PUSH w=' + pushBeam.toLocaleString() + ' (~' + Math.round(estPushSeconds / 60) + 'min) ***', 'yellow');
+            _liveProgress = {};
+            _missionStartTime = Date.now();
+            renderMission();
+            worker.postMessage({
+                type: 'run',
+                seed: msg.seed,
+                seedId: msg.seedId,
+                salt: 1,
+                beam: pushBeam,
+                threads: 0,
+                phase: 'push',
+            });
+            return;
+        }
     }
 
     // Clear current seed
