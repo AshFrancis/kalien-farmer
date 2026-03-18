@@ -9,10 +9,23 @@ block_cipher = None
 is_windows = sys.platform == 'win32'
 engine_binary = 'engine/kalien.exe' if is_windows else 'engine/kalien'
 
+# Collect engine binary + CUDA runtime DLLs if present
+extra_binaries = []
+if os.path.exists(engine_binary):
+    extra_binaries.append((engine_binary, 'engine'))
+if is_windows:
+    import glob
+    cuda_path = os.environ.get('CUDA_PATH', '')
+    if cuda_path:
+        cuda_bin = os.path.join(cuda_path, 'bin')
+        for pattern in ['cudart64_*.dll', 'nvrtc64_*.dll', 'nvrtc-builtins64_*.dll']:
+            for m in glob.glob(os.path.join(cuda_bin, pattern)):
+                extra_binaries.append((m, '.'))
+
 a = Analysis(
     ['kalien-farmer.py'],
     pathex=[],
-    binaries=[(engine_binary, 'engine')] if os.path.exists(engine_binary) else [],
+    binaries=extra_binaries,
     datas=[
         ('kalien/dashboard/page.html', 'kalien/dashboard'),
         ('runner.py', '.'),

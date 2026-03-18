@@ -878,6 +878,7 @@ async function loadSettings() {
     // Load benchmark info
     try {
         const setup = await fetch('/api/setup').then(r=>r.json());
+        _setupData = setup;
         const el = document.getElementById('benchmarkInfo');
         const b = setup.benchmark || {};
         const hw = b.hardware || {};
@@ -886,25 +887,68 @@ async function loadSettings() {
                 '<div style="color:var(--dim);margin-top:12px">No benchmark yet. Click START to auto-benchmark.</div>';
             return;
         }
-        const mode = hw.mode === 'gpu'
-            ? `<span style="color:var(--cyan)">GPU</span> \u2014 ${hw.gpu_name || 'Unknown'} (${(hw.gpu_vram_mb||0).toLocaleString()} MB)`
-            : `<span style="color:var(--green)">CPU</span> \u2014 ${hw.cpu_model || 'Unknown'} (${hw.cpu_cores || '?'} cores)`;
         const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--dim)">${label}</span><span>${value}</span></div>`;
-        el.innerHTML = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
+        const fmtBench = (cal, label) => {
+            if (!cal) return row(label, '<span style="color:var(--dim)">N/A</span>');
+            return row(label, `<span style="color:var(--cyan)">w=${(cal.qualify_beam||0).toLocaleString()}</span> <span style="color:var(--dim)">(~${Math.round((cal.qualify_time_est||0)/60)}m${Math.round((cal.qualify_time_est||0)%60)}s)</span>`);
+        };
+        const cpuCal = b.cpu || (b.selected_mode === 'cpu' ? b : null);
+        const gpuCal = b.gpu || (b.selected_mode === 'gpu' ? b : null);
+        const selected = b.selected_mode || 'cpu';
+        const hwDesc = hw.gpu_name
+            ? `${hw.gpu_name} + ${hw.cpu_model || 'CPU'} (${hw.cpu_cores} cores)`
+            : `${hw.cpu_model || 'CPU'} (${hw.cpu_cores} cores)`;
+        let html = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
             '<div style="margin-top:12px">' +
-            row('Mode', mode) +
-            row('Level', `<span style="color:var(--yellow)">${(b.level||'high').toUpperCase()}</span>`) +
-            row('Qualify beam', `<span style="color:var(--cyan)">w=${(b.qualify_beam||0).toLocaleString()}</span> <span style="color:var(--dim)">(~${Math.round((b.qualify_time_est||0)/60)}m${Math.round((b.qualify_time_est||0)%60)}s)</span>`) +
-            row('Threads', hw.mode === 'gpu' ? 'N/A (GPU)' : (b.threads||'auto')) +
+            row('Hardware', hwDesc) +
+            fmtBench(cpuCal, 'CPU qualify') +
+            (gpuCal ? fmtBench(gpuCal, 'GPU qualify') : '') +
+            row('Selected', `<span style="color:var(--cyan)">${selected.toUpperCase()}</span>`) +
             row('Benchmarked', b.timestamp || 'Unknown') +
-            '</div>' +
-            '<div style="margin-top:12px"><button class="ctrl-btn" onclick="ctrlAction(\'stop\');setTimeout(()=>{fetch(\'/api/settings\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({})});showToast(\'Restart runner with --benchmark to re-calibrate\',true)},500)" style="font-size:10px">RE-BENCHMARK</button></div>';
+            '</div>';
+        // Mode toggle (only if GPU available)
+        if (gpuCal && cpuCal) {
+            html += '<div style="margin-top:12px">' +
+                '<label style="font-size:11px;color:var(--dim);letter-spacing:1px">ENGINE MODE</label>' +
+                '<div style="display:flex;gap:8px;margin-top:4px">' +
+                '<button class="ctrl-btn' + (selected==='cpu'?' start':'') + '" onclick="setEngineMode(\'cpu\')" style="font-size:10px;flex:1">CPU (w=' + (cpuCal.qualify_beam||0).toLocaleString() + ')</button>' +
+                '<button class="ctrl-btn' + (selected==='gpu'?' start':'') + '" onclick="setEngineMode(\'gpu\')" style="font-size:10px;flex:1">GPU (w=' + (gpuCal.qualify_beam||0).toLocaleString() + ')</button>' +
+                '</div></div>';
+        }
+        html += '<div style="margin-top:12px"><button class="ctrl-btn" onclick="reBenchmark()" style="font-size:10px">RE-BENCHMARK</button></div>';
+        el.innerHTML = html;
+        // Update push beam placeholder with auto value
+        const activeCal = selected === 'gpu' ? gpuCal : cpuCal;
+        if (activeCal) {
+            const autoBeam = (activeCal.qualify_beam || 0) * 4;
+            const pushInput = document.getElementById('settingPushBeam');
+            if (autoBeam) pushInput.placeholder = 'auto (' + autoBeam.toLocaleString() + ' = 4\u00d7 qualify)';
+        }
+        setTimeout(updatePushEstimate, 100);
         // Update push beam placeholder with auto value
         const autoBeam = (b.qualify_beam || 0) * 4;
         const pushInput = document.getElementById('settingPushBeam');
         if (autoBeam) pushInput.placeholder = 'auto (' + autoBeam.toLocaleString() + ' = 4\u00d7 qualify)';
         setTimeout(updatePushEstimate, 100);
     } catch(e) {}
+}
+async function setEngineMode(mode) {
+    try {
+        await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({engine_mode: mode})});
+        showToast('Engine mode set to ' + mode.toUpperCase() + '. Restart runner to apply.', true);
+        ctrlAction('stop');
+        loadSettings();
+    } catch(e) { showToast('Failed: '+e, false); }
+}
+function reBenchmark() {
+    ctrlAction('stop');
+    setTimeout(() => {
+        // Delete benchmark.json by saving empty benchmark flag
+        fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({force_benchmark: true})});
+        showToast('Benchmark cleared. Restart the runner to re-benchmark.', true);
+    }, 500);
 }
 async function saveSettings() {
     const threshold = parseInt(document.getElementById('settingThreshold').value) || 1190000;

@@ -45,13 +45,23 @@ jobs:
         working-directory: engine
         run: make CPU=1
 
-      - name: Build engine (Windows)
+      - name: Install CUDA Toolkit (Windows)
+        if: runner.os == 'Windows'
+        uses: Jimver/cuda-toolkit@v0.2.22
+        with:
+          cuda: '12.6.3'
+          method: network
+          sub-packages: '["nvcc", "cudart", "nvrtc"]'
+
+      - name: Build engine (Windows GPU+CPU)
         if: runner.os == 'Windows'
         working-directory: engine
         shell: cmd
         run: |
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
-          cl /O2 /DNDEBUG /EHsc /std:c++17 /DCPU_ONLY kalien.cpp /Fe:kalien.exe
+          cl /O2 /DNDEBUG /EHsc /std:c++17 /I"%CUDA_PATH%\include" /c kalien.cpp /Fokalien.obj
+          nvcc -O3 -DNDEBUG -std=c++17 -c kernel.cu -o kernel.obj
+          cl kalien.obj kernel.obj /link /LIBPATH:"%CUDA_PATH%\lib\x64" cudart.lib nvrtc.lib cuda.lib /OUT:kalien.exe
 
       # ── Bundle into single executable ──
       - name: Build with PyInstaller

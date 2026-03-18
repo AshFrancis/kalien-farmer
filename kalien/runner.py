@@ -44,6 +44,7 @@ class RunnerContext:
         qualify_beam: int,
         push_beam: int,
         claimant: str,
+        use_cpu: bool = False,
     ) -> None:
         self.binary = binary
         self.hw = hw
@@ -53,6 +54,7 @@ class RunnerContext:
         self.qualify_beam = qualify_beam
         self.push_beam = push_beam
         self.claimant = claimant
+        self.use_cpu = use_cpu
         self.api = KalienAPI(log_fn=self.log)
         self.db = Database(paths.db)
         self._phase_start_time: float = 0.0
@@ -394,6 +396,10 @@ def main() -> None:
         _early_log("Benchmark failed!")
         sys.exit(1)
 
+    # Determine mode — user can override in settings
+    selected_mode = settings.get("engine_mode") or config.get("selected_mode", "cpu")
+    use_cpu = selected_mode == "cpu"
+
     qualify_beam = args.beam or config["qualify_beam"]
     push_beam = args.beam or config["push_beam"]
     threads = args.threads or config.get("threads", hw.cpu_cores)
@@ -409,11 +415,12 @@ def main() -> None:
         qualify_beam=qualify_beam,
         push_beam=push_beam,
         claimant=claimant,
+        use_cpu=use_cpu,
     )
     ctx.db.init_schema()
 
     ctx.log("=" * 60)
-    ctx.log(f"Kalien Runner started ({hw.mode.upper()}, level={args.level})")
+    ctx.log(f"Kalien Runner started (engine={selected_mode.upper()}, level={args.level})")
     ctx.log(
         f"  Qualify: w={qualify_beam}, Push: w={push_beam}, "
         f"Threshold: {ctx.get_push_threshold():,}"

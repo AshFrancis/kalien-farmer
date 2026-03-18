@@ -34,13 +34,11 @@ class HardwareInfo:
     cpu_model: str = field(default_factory=lambda: platform.processor() or "unknown")
 
     def summary(self) -> str:
-        """One-line human-readable description."""
         if self.mode == "gpu":
             return f"GPU — {self.gpu_name} ({self.gpu_vram_mb}MB VRAM)"
         return f"CPU — {self.cpu_model} ({self.cpu_cores} cores)"
 
     def to_dict(self) -> dict[str, Any]:
-        """Serialise to a plain dict (for JSON storage)."""
         return {
             "mode": self.mode,
             "gpu_name": self.gpu_name,
@@ -74,27 +72,30 @@ def detect_hardware() -> HardwareInfo:
     return hw
 
 
+def _engine_supports_gpu(binary: Path) -> bool:
+    """Check if the engine binary was compiled with GPU support."""
+    try:
+        r = subprocess.run(
+            [str(binary), "--help"],
+            capture_output=True, text=True, timeout=5,
+        )
+        # GPU builds show --device and --gpu options in help
+        return "--device" in r.stderr or "--device" in r.stdout
+    except Exception:
+        return False
+
+
 # ── Benchmarking ──────────────────────────────────────────────────────
-def run_benchmark(
+def _run_single_benchmark(
     binary: Path,
-    hw: HardwareInfo,
-    level: str,
+    mode: str,
+    test_beam: int,
+    threads: int,
     log_fn: Callable[[str], None],
     status_path: Optional[Path] = None,
     log_fh: Any = None,
-) -> Optional[dict[str, Any]]:
-    """Run a short benchmark to calibrate beam widths.
-
-    Returns a config dict on success, or ``None`` on failure.
-    If *status_path* is given, writes frame progress for the dashboard.
-    """
-    log_fn(f"Benchmarking... (mode={hw.mode}, level={level})")
-
-    test_beam = 4096 if hw.mode == "gpu" else 2048
-    threads = hw.cpu_cores
-    if level == "low":
-        threads = max(1, threads // 2)
-
+) -> Optional[float]:
+    """Run a single benchmark and return elapsed seconds, or None on failure."""
     with tempfile.TemporaryDirectory(prefix="kalien_bench_") as tmpdir:
         cmd = [
             str(binary),
@@ -107,19 +108,16 @@ def run_benchmark(
             "--iterations", "1",
             "--salt", "0",
         ]
-        if hw.mode == "cpu":
-            cmd += ["--threads", str(threads)]
+        if mode == "cpu":
+            cmd += ["--cpu", "--threads", str(threads)]
 
-        log_fn(
-            f"  Running w={test_beam}, "
-            f"{'threads=' + str(threads) if hw.mode == 'cpu' else 'GPU'}..."
-        )
+        label = f"{'CPU threads=' + str(threads) if mode == 'cpu' else 'GPU'}"
+        log_fn(f"  Running w={test_beam}, {label}...")
         start = time.time()
         try:
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
             )
-            current_frame = 0
             for raw in proc.stdout:  # type: ignore[union-attr]
                 line = raw.decode("utf-8", errors="replace")
                 try:
@@ -133,73 +131,137 @@ def run_benchmark(
                     except (UnicodeEncodeError, UnicodeDecodeError):
                         pass
                 m = re.search(r"frame=(\d+)", line)
-                if m:
-                    current_frame = int(m.group(1))
-                    # Write benchmark progress to status file
-                    if status_path:
-                        status_path.write_text(
-                            f"benchmarking w={test_beam} "
-                            f"frame={current_frame}/{FRAMES} "
-                            f"{math.floor(current_frame/FRAMES*100)}%\n"
-                        )
+                if m and status_path:
+                    frame = int(m.group(1))
+                    status_path.write_text(
+                        f"benchmarking {mode} w={test_beam} "
+                        f"frame={frame}/{FRAMES} "
+                        f"{math.floor(frame / FRAMES * 100)}%\n"
+                    )
             exit_code = proc.wait()
         except subprocess.TimeoutExpired:
             proc.kill()  # type: ignore[union-attr]
-            log_fn("  Benchmark timed out at 10 minutes")
+            log_fn(f"  Benchmark ({mode}) timed out")
             return None
         if exit_code != 0:
-            log_fn(f"  Benchmark failed: engine exited with code {exit_code}")
+            log_fn(f"  Benchmark ({mode}) failed: exit code {exit_code}")
             return None
-        elapsed = time.time() - start
+        return time.time() - start
 
-    log_fn(f"  Benchmark: w={test_beam} took {elapsed:.1f}s")
 
+def _calibrate(elapsed: float, test_beam: int, level: str,
+               hw: HardwareInfo, mode: str) -> dict[str, Any]:
+    """Compute beam widths from a benchmark timing."""
     if elapsed < 1:
-        elapsed = 1.0  # safety floor
+        elapsed = 1.0
 
-    # Extrapolate: time scales ~linearly with beam width
     rate = elapsed / test_beam  # seconds per beam unit
 
-    # Qualify: must finish in <9 min (540 s) for 1 salt
+    # Qualify: must finish in <9 min (540 s)
     max_qualify = int(test_beam * (540 / elapsed) * 0.85)
-    # Push: wider beam, fewer salts — width beats depth
-    # Target: 10 salts at 3× qualify beam, total ~8 hours
     max_push = max_qualify * 3
 
     if level == "low":
         max_qualify //= 2
         max_push //= 2
 
-    # GPU VRAM cap: ~63 KB per beam unit
-    if hw.mode == "gpu" and hw.gpu_vram_mb:
+    # GPU VRAM cap
+    if mode == "gpu" and hw.gpu_vram_mb:
         vram_cap = int((hw.gpu_vram_mb - 500) * 1024 / 63)
         max_qualify = min(max_qualify, vram_cap)
         max_push = min(max_push, vram_cap)
 
-    # Round to nearest 1024
     max_qualify = max(1024, (max_qualify // 1024) * 1024)
     max_push = max(1024, (max_push // 1024) * 1024)
 
-    config: dict[str, Any] = {
-        "version": 1,
-        "timestamp": now_iso(),
-        "hardware": hw.to_dict(),
-        "level": level,
-        "benchmark": {
-            "test_beam": test_beam,
-            "test_time": round(elapsed, 2),
-            "rate": round(rate, 6),
-        },
+    return {
+        "test_beam": test_beam,
+        "test_time": round(elapsed, 2),
+        "rate": round(rate, 6),
         "qualify_beam": max_qualify,
         "push_beam": max_push,
-        "threads": threads,
         "qualify_time_est": round(max_qualify * rate),
         "push_salt_time_est": round(max_push * rate),
     }
-    log_fn(
-        f"  Calibrated: qualify w={max_qualify} (~{config['qualify_time_est']}s), "
-        f"push w={max_push} (~{config['push_salt_time_est']}s/salt)"
+
+
+def run_benchmark(
+    binary: Path,
+    hw: HardwareInfo,
+    level: str,
+    log_fn: Callable[[str], None],
+    status_path: Optional[Path] = None,
+    log_fh: Any = None,
+) -> Optional[dict[str, Any]]:
+    """Run benchmarks and return config dict.
+
+    If the engine supports GPU and an NVIDIA GPU is detected, benchmarks
+    both CPU and GPU sequentially and picks the faster one as default.
+    """
+    has_gpu = hw.mode == "gpu" and _engine_supports_gpu(binary)
+    threads = hw.cpu_cores
+    if level == "low":
+        threads = max(1, threads // 2)
+
+    # Always benchmark CPU
+    cpu_test_beam = 2048
+    log_fn(f"Benchmarking CPU (mode=cpu, level={level})")
+    cpu_elapsed = _run_single_benchmark(
+        binary, "cpu", cpu_test_beam, threads, log_fn,
+        status_path=status_path, log_fh=log_fh,
     )
+    if cpu_elapsed is None:
+        return None
+    log_fn(f"  CPU benchmark: w={cpu_test_beam} took {cpu_elapsed:.1f}s")
+    cpu_cal = _calibrate(cpu_elapsed, cpu_test_beam, level, hw, "cpu")
+
+    # Benchmark GPU if available
+    gpu_cal = None
+    if has_gpu:
+        gpu_test_beam = 4096
+        log_fn(f"Benchmarking GPU (mode=gpu, level={level})")
+        gpu_elapsed = _run_single_benchmark(
+            binary, "gpu", gpu_test_beam, threads, log_fn,
+            status_path=status_path, log_fh=log_fh,
+        )
+        if gpu_elapsed is not None:
+            log_fn(f"  GPU benchmark: w={gpu_test_beam} took {gpu_elapsed:.1f}s")
+            gpu_cal = _calibrate(gpu_elapsed, gpu_test_beam, level, hw, "gpu")
+
+    # Pick the faster mode as default
+    best_mode = "cpu"
+    best_cal = cpu_cal
+    if gpu_cal and gpu_cal["qualify_beam"] > cpu_cal["qualify_beam"]:
+        best_mode = "gpu"
+        best_cal = gpu_cal
+
+    log_fn(
+        f"  Calibrated: {best_mode.upper()} qualify w={best_cal['qualify_beam']} "
+        f"(~{best_cal['qualify_time_est']}s)"
+    )
+    if gpu_cal and cpu_cal:
+        log_fn(
+            f"  CPU: w={cpu_cal['qualify_beam']}, GPU: w={gpu_cal['qualify_beam']} "
+            f"→ using {best_mode.upper()}"
+        )
+
+    config: dict[str, Any] = {
+        "version": 2,
+        "timestamp": now_iso(),
+        "hardware": hw.to_dict(),
+        "level": level,
+        "selected_mode": best_mode,
+        "cpu": cpu_cal,
+        "benchmark": best_cal,  # backward compat
+        "qualify_beam": best_cal["qualify_beam"],
+        "push_beam": best_cal["push_beam"],
+        "threads": threads,
+        "qualify_time_est": best_cal["qualify_time_est"],
+        "push_salt_time_est": best_cal["push_salt_time_est"],
+    }
+    if gpu_cal:
+        config["gpu"] = gpu_cal
+
     return config
 
 
@@ -219,16 +281,15 @@ def load_or_benchmark(
             config = json.loads(config_path.read_text())
             cached_hw = config.get("hardware", {})
             hw_match = (
-                cached_hw.get("mode") == hw.mode
-                and cached_hw.get("cpu_cores") == hw.cpu_cores
+                cached_hw.get("cpu_cores") == hw.cpu_cores
                 and cached_hw.get("cpu_model") == hw.cpu_model
                 and cached_hw.get("gpu_name") == hw.gpu_name
                 and cached_hw.get("gpu_vram_mb") == hw.gpu_vram_mb
             )
             if config.get("level") == level and hw_match:
                 log_fn(
-                    f"Loaded config: qualify w={config['qualify_beam']}, "
-                    f"push w={config['push_beam']}"
+                    f"Loaded config: {config.get('selected_mode', 'cpu').upper()} "
+                    f"qualify w={config['qualify_beam']}"
                 )
                 return config
             elif not hw_match:

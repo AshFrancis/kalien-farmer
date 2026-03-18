@@ -34,6 +34,7 @@ def run_one_salt(
     phase: str = "",
     salt_idx: int = 0,
     salt_total: int = 1,
+    use_cpu: bool = False,
 ) -> tuple[int, Optional[str]]:
     """Run a single salt iteration.
 
@@ -55,8 +56,8 @@ def run_one_salt(
         "--iterations", "1",
         "--salt", str(salt),
     ]
-    if hw.mode == "cpu":
-        cmd += ["--threads", str(threads)]
+    if use_cpu or hw.mode == "cpu":
+        cmd += ["--cpu", "--threads", str(threads)]
     try:
         with open(log_file, "w", encoding="utf-8", errors="replace") as lf:
             proc = subprocess.Popen(
@@ -152,6 +153,7 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
             ctx.binary, seed, beam, salt, outdir, ctx.hw, ctx.threads,
             status_path=ctx.paths.status, phase=phase,
             salt_idx=salts_done_so_far, salt_total=salts_total,
+            use_cpu=ctx.use_cpu,
         )
 
         if score < 0:
