@@ -487,15 +487,10 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
         <input type="text" id="seedHex" placeholder="e.g. 057EE1FA" maxlength="8" style="text-transform:uppercase">
         <label>SEED ID</label>
         <input type="number" id="seedId" placeholder="e.g. 2955973">
-        <label>BEAM WIDTH</label>
-        <select id="seedBeam">
-            <option value="0" selected>Auto (from settings)</option>
-            <option value="32768">32,768</option>
-            <option value="65536">65,536</option>
-            <option value="131072">131,072</option>
-        </select>
-        <label>SALTS</label>
-        <input type="number" id="seedSalts" value="30" min="1" max="100">
+        <label>BEAM WIDTH <span style="color:var(--dim);font-size:10px">(blank = use push settings)</span></label>
+        <input type="number" id="seedBeam" placeholder="from push settings" style="width:100%">
+        <label>DURATION (HOURS) <span style="color:var(--dim);font-size:10px">(blank = use push settings)</span></label>
+        <input type="number" id="seedHours" placeholder="from push settings" min="1" max="24" style="width:100%">
         <div class="modal-btns">
             <button class="ctrl-btn" onclick="closeAddSeed()">CANCEL</button>
             <button class="ctrl-btn start" onclick="submitAddSeed()">ADD TO QUEUE</button>
@@ -791,16 +786,27 @@ function showToast(msg, ok) {
     el.textContent = msg; el.style.display = 'block';
     setTimeout(() => { el.style.display = 'none'; }, 4000);
 }
-function showAddSeed() { document.getElementById('addSeedModal').classList.add('active'); document.getElementById('seedHex').focus(); }
+function showAddSeed() {
+    document.getElementById('addSeedModal').classList.add('active');
+    // Pre-fill with current push settings
+    const beamInput = document.getElementById('seedBeam');
+    const hoursInput = document.getElementById('seedHours');
+    const pushBeam = document.getElementById('settingPushBeam');
+    const pushHours = document.getElementById('settingPushHours');
+    if (pushBeam && pushBeam.value) beamInput.placeholder = pushBeam.value;
+    if (pushHours && pushHours.value) hoursInput.placeholder = pushHours.value;
+    document.getElementById('seedHex').focus();
+}
 function closeAddSeed() { document.getElementById('addSeedModal').classList.remove('active'); }
 async function submitAddSeed() {
     const seed = document.getElementById('seedHex').value.trim().toUpperCase();
     const sid = parseInt(document.getElementById('seedId').value) || 0;
-    const beam = parseInt(document.getElementById('seedBeam').value);
-    const salts = parseInt(document.getElementById('seedSalts').value) || 30;
+    const beam = parseInt(document.getElementById('seedBeam').value) || 0;
+    const hours = parseInt(document.getElementById('seedHours').value) || 0;
+    // salts=9999 with time limit — same as auto push
     try {
         const data = await fetch('/api/add_seed', {method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({seed, seed_id: sid, beam, salts})}).then(r=>r.json());
+            body: JSON.stringify({seed, seed_id: sid, beam, salts: 9999, hours})}).then(r=>r.json());
         showToast(data.msg, data.ok); if (data.ok) closeAddSeed();
     } catch(e) { showToast('Failed: '+e, false); }
 }
