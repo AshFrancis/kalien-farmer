@@ -134,17 +134,22 @@ def build_api_status(
         if status_path.exists():
             line = status_path.read_text().strip()
             import re
-            m = re.search(r"frame=(\d+)/(\d+)", line)
-            if m:
-                progress["frame"] = int(m.group(1))
-                progress["total_frames"] = int(m.group(2))
-            m = re.search(r"score=(\d+)", line)
-            if m:
-                progress["live_score"] = int(m.group(1))
-            m = re.search(r"salt=(\d+)/(\d+)", line)
-            if m:
-                progress["salt"] = int(m.group(1))
-                progress["salt_total"] = int(m.group(2))
+            # Only use progress if seed matches current state
+            parts = line.split()
+            status_seed = parts[1].upper() if len(parts) > 1 else ""
+            state_seed = (state.get("seed") or "").upper()
+            if status_seed == state_seed:
+                m = re.search(r"frame=(\d+)/(\d+)", line)
+                if m:
+                    progress["frame"] = int(m.group(1))
+                    progress["total_frames"] = int(m.group(2))
+                m = re.search(r"score=(\d+)", line)
+                if m:
+                    progress["live_score"] = int(m.group(1))
+                m = re.search(r"salt=(\d+)/(\d+)", line)
+                if m:
+                    progress["salt"] = int(m.group(1))
+                    progress["salt_total"] = int(m.group(2))
     except Exception:
         pass
     return {
