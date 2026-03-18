@@ -822,7 +822,7 @@ function arrayBufferToBase64(buffer) {
 function saveBenchmark(data) {
     localStorage.setItem('kalien_benchmark', JSON.stringify(data));
 }
-const WASM_MAX_BEAM = 24576;
+const WASM_MAX_BEAM = 49152;
 function loadBenchmark() {
     try {
         const d = JSON.parse(localStorage.getItem('kalien_benchmark'));

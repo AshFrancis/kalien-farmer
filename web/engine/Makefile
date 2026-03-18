@@ -8,7 +8,7 @@ LDFLAGS  = -s EXPORTED_FUNCTIONS='["_wasm_run","_wasm_tape_ptr","_wasm_tape_len"
            -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","HEAPU8"]' \
            -s ALLOW_MEMORY_GROWTH=1 \
            -s INITIAL_MEMORY=268435456 \
-           -s MAXIMUM_MEMORY=2147483648 \
+           -s MAXIMUM_MEMORY=4294967296 \
            -s USE_PTHREADS=1 \
            -s PTHREAD_POOL_SIZE='navigator.hardwareConcurrency||4' \
            -s ENVIRONMENT='web,worker' \
