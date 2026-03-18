@@ -890,7 +890,6 @@ async function loadSettings() {
             row('Mode', mode) +
             row('Level', `<span style="color:var(--yellow)">${(b.level||'high').toUpperCase()}</span>`) +
             row('Qualify beam', `<span style="color:var(--cyan)">w=${(b.qualify_beam||0).toLocaleString()}</span> <span style="color:var(--dim)">(~${Math.round((b.qualify_time_est||0)/60)}m${Math.round((b.qualify_time_est||0)%60)}s)</span>`) +
-            row('Push beam', `<span style="color:var(--cyan)">w=${(b.push_beam||0).toLocaleString()}</span> <span style="color:var(--dim)">(~${Math.round((b.push_salt_time_est||0)/60)}m${Math.round((b.push_salt_time_est||0)%60)}s/salt)</span>`) +
             row('Threads', hw.mode === 'gpu' ? 'N/A (GPU)' : (b.threads||'auto')) +
             row('Benchmarked', b.timestamp || 'Unknown') +
             '</div>' +
