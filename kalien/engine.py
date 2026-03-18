@@ -181,7 +181,8 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
 
         if phase == "push":
             salts_done = state["salt_current"] - state.get("salt_start_orig", 0)
-            salts_total = state["salt_end"] - state.get("salt_start_orig", 0)
+            raw_total = state["salt_end"] - state.get("salt_start_orig", 0)
+            salts_total = salts_done if raw_total >= 9000 else raw_total  # time-boxed: total = done so far
 
             # Time-box check: stop if we've exceeded the time limit
             # Default to matching tier if not set (handles old state files)
