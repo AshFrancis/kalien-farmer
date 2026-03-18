@@ -569,7 +569,8 @@ function renderSeeds(seeds) {
         if (s.is_running) {
             const pr = _liveProgress || {};
             const saltsDone = pr.salt || 0;
-            const saltsTotal = pr.salt_total || s.run_salt_end || 1;
+            let saltsTotal = pr.salt_total || s.run_salt_end || 1;
+            if (saltsTotal >= 9000) saltsTotal = Math.max(saltsDone + 1, 10); // time-boxed: don't show 9999 blocks
             const framePct = (pr.frame && pr.total_frames) ? Math.floor((pr.frame / pr.total_frames) * 100) : 0;
             prog = makeBlocks(saltsDone, saltsTotal, true, framePct);
         } else if (s.push_status==='completed') {
@@ -668,7 +669,11 @@ function renderMission(status, runnerStatus) {
         const elSec = Math.floor((elapsed % 60000) / 1000);
         const timer = `${elMin}:${elSec < 10 ? '0' : ''}${elSec}`;
 
-        const saltInfo = p.salt_total ? `salt <span>${p.salt || 0}/${p.salt_total}</span>` : `salt <span>${s.salt_current}/${s.salt_end}</span>`;
+        const rawSaltTotal = p.salt_total || s.salt_end || 1;
+        const timeBoxed = rawSaltTotal >= 9000;
+        const saltInfo = timeBoxed
+            ? `salt <span>${p.salt || s.salt_current || 0}</span>`
+            : `salt <span>${p.salt || 0}/${rawSaltTotal}</span>`;
         const scoreVal = p.live_score || s.best_score || 0;
 
         d.innerHTML = `w=<span>${(s.beam||0).toLocaleString()}</span> \u00b7 ${saltInfo}${frameInfo} \u00b7 score: <span style="color:var(--green)">${fmtScore(scoreVal)}</span> \u00b7 <span style="color:var(--cyan)">${timer}</span>${etaInfo}`;
