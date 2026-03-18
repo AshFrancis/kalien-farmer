@@ -50,13 +50,7 @@ jobs:
         uses: Jimver/cuda-toolkit@v0.2.22
         with:
           cuda: '12.6.3'
-          method: network
-          sub-packages: '["nvcc", "cudart", "nvrtc", "nvrtc_dev", "cudart_dev", "cuda_runtime"]'
-
-      - name: List CUDA libs (debug)
-        if: runner.os == 'Windows'
-        shell: cmd
-        run: dir /s "%CUDA_PATH%\lib\x64\*.lib" 2>nul | findstr /i "cuda nvrtc"
+          method: local
 
       - name: Build engine (Windows GPU+CPU)
         if: runner.os == 'Windows'
