@@ -860,7 +860,7 @@ async function loadSettings() {
     try {
         const s = await fetch('/api/settings').then(r=>r.json());
         document.getElementById('settingThreshold').value = s.push_threshold || 1190000;
-        document.getElementById('settingPushBeam').value = s.push_beam || 0;
+        document.getElementById('settingPushBeam').value = s.push_beam || '';
         document.getElementById('settingPushHours').value = s.push_hours || 3;
     } catch(e) {}
     // Load benchmark info
@@ -888,6 +888,11 @@ async function loadSettings() {
             row('Benchmarked', b.timestamp || 'Unknown') +
             '</div>' +
             '<div style="margin-top:12px"><button class="ctrl-btn" onclick="ctrlAction(\'stop\');setTimeout(()=>{fetch(\'/api/settings\',{method:\'POST\',headers:{\'Content-Type\':\'application/json\'},body:JSON.stringify({})});showToast(\'Restart runner with --benchmark to re-calibrate\',true)},500)" style="font-size:10px">RE-BENCHMARK</button></div>';
+        // Update push beam placeholder with auto value
+        const autoBeam = (b.qualify_beam || 0) * 4;
+        const pushInput = document.getElementById('settingPushBeam');
+        if (autoBeam) pushInput.placeholder = 'auto (' + autoBeam.toLocaleString() + ' = 4\u00d7 qualify)';
+        setTimeout(updatePushEstimate, 100);
     } catch(e) {}
 }
 async function saveSettings() {
