@@ -242,7 +242,7 @@ def run_benchmark(
     if gpu_cal and cpu_cal:
         log_fn(
             f"  CPU: w={cpu_cal['qualify_beam']}, GPU: w={gpu_cal['qualify_beam']} "
-            f"→ using {best_mode.upper()}"
+            f"-> using {best_mode.upper()}"
         )
 
     config: dict[str, Any] = {
