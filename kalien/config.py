@@ -40,12 +40,9 @@ MIN_REMAINING_FINISH_MINUTES: int = 30
 EXPIRY_RECHECK_SALTS: int = 5
 QUALIFY_SALTS: int = 1
 
-# Push runs are time-boxed, not salt-count-limited.
-# Tiers are multiples of the calibrated qualify beam.
-PUSH_TIERS: list[dict] = [
-    {"multiplier": 2, "hours": 3},
-    {"multiplier": 4, "hours": 6},
-]
+# Push: single time-boxed run. Defaults can be overridden in settings.json.
+DEFAULT_PUSH_BEAM_MULTIPLIER: int = 4      # push beam = qualify beam × this
+DEFAULT_PUSH_HOURS: int = 3                # time limit in hours
 
 HORIZON: int = 20
 FRAMES: int = 36_000

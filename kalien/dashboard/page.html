@@ -440,9 +440,24 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
                     <label style="font-size:11px;color:var(--dim);letter-spacing:1px">PUSH THRESHOLD</label>
                     <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
                         <input type="number" id="settingThreshold" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;width:200px">
+                    </div>
+                    <div style="color:var(--dim);font-size:11px;margin-top:6px">Seeds scoring above this in qualify get a push run. Default: 1,190,000</div>
+                </div>
+                <div style="margin-top:16px">
+                    <label style="font-size:11px;color:var(--dim);letter-spacing:1px">PUSH BEAM WIDTH</label>
+                    <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
+                        <input type="number" id="settingPushBeam" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;width:200px" placeholder="0 = auto (4x qualify)">
+                    </div>
+                    <div style="color:var(--dim);font-size:11px;margin-top:6px">Exact beam width for push. Set to 0 for auto (4× calibrated qualify beam).</div>
+                </div>
+                <div style="margin-top:16px">
+                    <label style="font-size:11px;color:var(--dim);letter-spacing:1px">PUSH DURATION (HOURS)</label>
+                    <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
+                        <input type="number" id="settingPushHours" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;width:200px" min="1" max="24">
                         <button class="ctrl-btn start" onclick="saveSettings()">SAVE</button>
                     </div>
-                    <div style="color:var(--dim);font-size:11px;margin-top:6px">Seeds scoring above this in qualify get a full push run. Default: 1,190,000</div>
+                    <div style="color:var(--dim);font-size:11px;margin-top:6px">Time limit for push run. Default: 3 hours.</div>
+                    <div style="color:var(--dim);font-size:11px;margin-top:4px" id="pushEstimate"></div>
                 </div>
             </div>
             <div class="mission" style="flex:1;min-width:300px" id="benchmarkInfo">
@@ -821,10 +836,32 @@ async function refreshTapes() {
 document.querySelector('[data-page="tapes"]').addEventListener('click', refreshTapes);
 
 // Settings
+function updatePushEstimate() {
+    const el = document.getElementById('pushEstimate');
+    if (!el) return;
+    try {
+        const setup = _setupData;
+        if (!setup || !setup.benchmark_done) { el.textContent = ''; return; }
+        const b = setup.benchmark || {};
+        const rate = b.rate || 0;
+        const qualifyBeam = setup.benchmark?.test_beam ? (b.qualify_beam || 0) : 0;
+        let pushBeam = parseInt(document.getElementById('settingPushBeam').value) || 0;
+        if (!pushBeam) pushBeam = qualifyBeam * 4;
+        const hours = parseInt(document.getElementById('settingPushHours').value) || 3;
+        if (rate > 0 && pushBeam > 0) {
+            const secPerSalt = pushBeam * rate;
+            const estSalts = Math.floor((hours * 3600) / secPerSalt);
+            const minPerSalt = Math.round(secPerSalt / 60);
+            el.innerHTML = `\u2192 w=${pushBeam.toLocaleString()}, ~${minPerSalt}min/salt, ~${estSalts} salts in ${hours}h`;
+        }
+    } catch(e) {}
+}
 async function loadSettings() {
     try {
         const s = await fetch('/api/settings').then(r=>r.json());
         document.getElementById('settingThreshold').value = s.push_threshold || 1190000;
+        document.getElementById('settingPushBeam').value = s.push_beam || 0;
+        document.getElementById('settingPushHours').value = s.push_hours || 3;
     } catch(e) {}
     // Load benchmark info
     try {
@@ -855,14 +892,18 @@ async function loadSettings() {
 }
 async function saveSettings() {
     const threshold = parseInt(document.getElementById('settingThreshold').value) || 1190000;
+    const pushBeam = parseInt(document.getElementById('settingPushBeam').value) || 0;
+    const pushHours = parseInt(document.getElementById('settingPushHours').value) || 3;
     try {
         const data = await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({push_threshold: threshold})}).then(r=>r.json());
+            body: JSON.stringify({push_threshold: threshold, push_beam: pushBeam, push_hours: pushHours})}).then(r=>r.json());
         showToast(data.ok ? 'Settings saved' : 'Failed', data.ok);
     } catch(e) { showToast('Failed: '+e, false); }
 }
 loadSettings();
-document.querySelector('[data-page="settings"]').addEventListener('click', loadSettings);
+document.querySelector('[data-page="settings"]').addEventListener('click', () => { loadSettings(); setTimeout(updatePushEstimate, 500); });
+document.getElementById('settingPushBeam').addEventListener('input', updatePushEstimate);
+document.getElementById('settingPushHours').addEventListener('input', updatePushEstimate);
 
 // Log viewer
 let _logInterval = null;
