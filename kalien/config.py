@@ -41,10 +41,10 @@ EXPIRY_RECHECK_SALTS: int = 5
 QUALIFY_SALTS: int = 1
 
 # Push runs are time-boxed, not salt-count-limited.
-# Two tiers based on beam width, running unlimited salts until time expires.
+# Tiers are multiples of the calibrated qualify beam.
 PUSH_TIERS: list[dict] = [
-    {"beam": 65536, "hours": 3},
-    {"beam": 131072, "hours": 6},
+    {"multiplier": 2, "hours": 3},
+    {"multiplier": 4, "hours": 6},
 ]
 
 HORIZON: int = 20

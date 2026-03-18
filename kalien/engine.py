@@ -188,8 +188,10 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
             time_limit = state.get("time_limit", 0)
             if time_limit == 0 and phase == "push":
                 from kalien.config import PUSH_TIERS
+                # Infer multiplier from beam/qualify_beam ratio, match to tier
+                mult = beam / max(ctx.qualify_beam, 1)
                 for tier in PUSH_TIERS:
-                    if beam <= tier["beam"]:
+                    if mult <= tier["multiplier"]:
                         time_limit = tier["hours"] * 3600
                         break
                 if not time_limit:

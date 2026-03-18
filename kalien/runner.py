@@ -118,20 +118,23 @@ def handle_phase_completion(state: dict[str, Any], ctx: RunnerContext) -> None:
         if state["best_score"] > threshold:
             # Queue time-boxed push tiers (widest first so it runs last)
             for tier in reversed(PUSH_TIERS):
-                beam = tier["beam"]
+                beam = ctx.qualify_beam * tier["multiplier"]
+                # Round to nearest 1024
+                beam = max(1024, (beam // 1024) * 1024)
                 hours = tier["hours"]
-                # Use a large salt count — the time limit will stop it
-                salts = 9999
+                salts = 9999  # time limit will stop it
                 ctx.log(
                     f"*** {seed} qualified with {state['best_score']:,} — "
-                    f"queuing push w={beam:,} ({hours}h time-boxed) ***"
+                    f"queuing push w={beam:,} ({tier['multiplier']}x, {hours}h) ***"
                 )
                 push_queue_front(
                     ctx.paths.queue,
                     f"{seed}:{sid}:{salts}:0:{beam}",
                 )
+            first_beam = ctx.qualify_beam * PUSH_TIERS[0]["multiplier"]
+            first_beam = max(1024, (first_beam // 1024) * 1024)
             ctx.db.update_push(
-                seed, "queued", beam=PUSH_TIERS[0]["beam"],
+                seed, "queued", beam=first_beam,
                 salts_total=0,
             )
     else:
@@ -251,9 +254,9 @@ def process_one_seed(ctx: RunnerContext) -> bool:
     # Determine time limit for push runs
     time_limit_seconds = 0
     if phase == "push":
-        # Match beam to a tier, or default to 3 hours
+        mult = beam / max(ctx.qualify_beam, 1)
         for tier in PUSH_TIERS:
-            if beam <= tier["beam"]:
+            if mult <= tier["multiplier"]:
                 time_limit_seconds = tier["hours"] * 3600
                 break
         if not time_limit_seconds:
