@@ -60,7 +60,7 @@ jobs:
           call "C:\Program Files\Microsoft Visual Studio\2022\Enterprise\VC\Auxiliary\Build\vcvarsall.bat" x64
           cl /O2 /DNDEBUG /EHsc /std:c++17 /I"%CUDA_PATH%\include" /c kalien.cpp /Fokalien.obj
           nvcc -O3 -DNDEBUG -std=c++17 -c kernel.cu -o kernel.obj
-          cl kalien.obj kernel.obj /link /LIBPATH:"%CUDA_PATH%\lib\x64" cudart.lib nvrtc.lib /OUT:kalien.exe
+          cl kalien.obj kernel.obj /link /LIBPATH:"%CUDA_PATH%\lib\x64" cudart.lib nvrtc.lib cuda.lib /OUT:kalien.exe
 
       # ── Bundle into single executable ──
       - name: Build with PyInstaller
