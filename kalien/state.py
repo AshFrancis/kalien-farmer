@@ -37,7 +37,8 @@ def record_result(results_path: Path, state: dict[str, Any]) -> None:
         with open(results_path, "w") as f:
             f.write("timestamp\tseed\tseed_id\tbest_score\tbest_salt\tsalts\telapsed\tbeam\n")
     ts = now_iso()
-    total = state["salt_end"] - state.get("salt_start_orig", 0)
+    raw_total = state["salt_end"] - state.get("salt_start_orig", 0)
+    total = state["salt_current"] - state.get("salt_start_orig", 0) if raw_total >= 9000 else raw_total
     elapsed = state.get("elapsed", 0)
     with open(results_path, "a") as f:
         f.write(

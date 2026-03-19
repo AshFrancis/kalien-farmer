@@ -135,22 +135,25 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
                 )
                 state["aborted"] = "expired"
                 save_state(ctx.paths.state, state)
+                done = state["salt_current"] - state.get("salt_start_orig", 0)
                 ctx.db.update_push(
                     seed,
                     "expired",
                     beam=beam,
                     score=state["best_score"],
                     salt=state["best_salt"],
-                    salts_done=state["salt_current"],
-                    salts_total=state["salt_end"] - state.get("salt_start_orig", 0),
+                    salts_done=done,
+                    salts_total=done,
                 )
                 return state
 
         salt = state["salt_current"]
         total = state["salt_end"]
-        ctx.log(f"  salt {salt}/{total-1} (w={beam}, seed={seed})")
+        time_boxed = total - state.get("salt_start_orig", 0) >= 9000
+        salt_label = f"salt {salt}" if time_boxed else f"salt {salt}/{total-1}"
+        ctx.log(f"  {salt_label} (w={beam}, seed={seed})")
         ctx.paths.status.write_text(
-            f"running {seed} {now_iso()} {phase} w={beam} salt={salt}/{total-1}\n"
+            f"running {seed} {now_iso()} {phase} w={beam} {salt_label}\n"
         )
 
         salts_done_so_far = salt - state.get("salt_start_orig", 0)

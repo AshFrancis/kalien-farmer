@@ -198,10 +198,9 @@ def try_resume(ctx: RunnerContext, push_time_est_seconds: float) -> None:
         clear_state(ctx.paths.state)
         return
 
-    ctx.log(
-        f"RESUMING: {state['seed']} phase={state['phase']} "
-        f"salt={state['salt_current']}/{state['salt_end']}"
-    )
+    raw_total = state["salt_end"] - state.get("salt_start_orig", 0)
+    salt_info = f"salt={state['salt_current']}" if raw_total >= 9000 else f"salt={state['salt_current']}/{state['salt_end']}"
+    ctx.log(f"RESUMING: {state['seed']} phase={state['phase']} {salt_info}")
     start = time.time()
     ctx._phase_start_time = start
     state = run_phase(state, ctx)
