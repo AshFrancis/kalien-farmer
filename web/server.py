@@ -17,7 +17,7 @@ import json
 import sys
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Optional
 from urllib.error import HTTPError
@@ -484,7 +484,7 @@ def main():
     print(f"  \u2551  {url:<39s} \u2551")
     print(f"  \u255a{'=' * 42}\u255d\n")
 
-    server = HTTPServer((args.host, args.port), Handler)
+    server = ThreadingHTTPServer((args.host, args.port), Handler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
