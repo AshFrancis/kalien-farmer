@@ -119,13 +119,19 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
             state["salt_current"] > 0
             and state["salt_current"] % EXPIRY_RECHECK_SALTS == 0
         ):
-            salts_left = state["salt_end"] - state["salt_current"]
-            ok, rem, needed = ctx.api.enough_time(
-                sid, salts_left, ctx.salt_time_est_seconds
-            )
-            if not ok:
+            rem = ctx.api.seed_remaining_minutes(sid)
+            time_limit = state.get("time_limit", 0)
+            if time_limit > 0:
+                # Time-boxed: only check if seed itself has expired
+                # (the time-box check below handles the budget)
+                expired = rem < 30
+            else:
+                salts_left = state["salt_end"] - state["salt_current"]
+                needed = salts_left * (ctx.salt_time_est_seconds / 60) + 30
+                expired = rem < needed
+            if expired:
                 ctx.log(
-                    f"  EXPIRED: {rem:.0f} min left, need {needed:.0f} — aborting"
+                    f"  EXPIRED: {rem:.0f} min left — aborting"
                 )
                 state["aborted"] = "expired"
                 save_state(ctx.paths.state, state)
