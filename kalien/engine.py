@@ -63,6 +63,12 @@ def run_one_salt(
             proc = subprocess.Popen(
                 cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT
             )
+            # Write engine PID so dashboard can pause/resume it
+            pid_path = outdir.parent / "engine.pid"
+            try:
+                pid_path.write_text(str(proc.pid))
+            except Exception:
+                pass
             score, salt_hex = 0, f"0x{salt:08x}"
             current_frame = 0
             for raw in proc.stdout:  # type: ignore[union-attr]
@@ -89,6 +95,11 @@ def run_one_salt(
                         f"score={score}\n"
                     )
             exit_code = proc.wait()
+        # Clean up PID file
+        try:
+            pid_path.unlink(missing_ok=True)
+        except Exception:
+            pass
         if exit_code != 0:
             print(
                 f"  WARNING: engine exited with code {exit_code} for salt {salt}",
@@ -204,7 +215,8 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
                 state["time_limit"] = time_limit
             if time_limit > 0:
                 # Track cumulative compute time across stop/resume cycles
-                session_elapsed = time.time() - ctx._phase_start_time
+                # Subtract any time spent paused (engine suspended)
+                session_elapsed = time.time() - ctx._phase_start_time - ctx._paused_duration
                 prior_elapsed = state.get("push_elapsed_total", 0)
                 total_elapsed = prior_elapsed + session_elapsed
                 if total_elapsed >= time_limit:

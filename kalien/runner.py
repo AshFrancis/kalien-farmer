@@ -58,6 +58,7 @@ class RunnerContext:
         self.api = KalienAPI(log_fn=self.log)
         self.db = Database(paths.db)
         self._phase_start_time: float = 0.0
+        self._paused_duration: float = 0.0
         self._log_fh: Any = None
 
     def close(self) -> None:
@@ -89,12 +90,14 @@ class RunnerContext:
 
     # ── Pause Support ─────────────────────────────────────────────
     def check_pause(self) -> None:
-        """Block while the pause file exists."""
+        """Block while the pause file exists. Tracks paused duration."""
         if self.paths.pause.exists():
             self.log("PAUSED — remove pause file to resume")
             self.paths.status.write_text(f"paused {now_iso()}\n")
+            pause_start = time.time()
             while self.paths.pause.exists():
                 time.sleep(5)
+            self._paused_duration += time.time() - pause_start
             self.log("RESUMED")
 
 
@@ -203,6 +206,7 @@ def try_resume(ctx: RunnerContext, push_time_est_seconds: float) -> None:
     ctx.log(f"RESUMING: {state['seed']} phase={state['phase']} {salt_info}")
     start = time.time()
     ctx._phase_start_time = start
+    ctx._paused_duration = 0.0
     state = run_phase(state, ctx)
     state["elapsed"] = int(time.time() - start)
 
@@ -318,6 +322,7 @@ def process_one_seed(ctx: RunnerContext) -> bool:
 
     start = time.time()
     ctx._phase_start_time = start
+    ctx._paused_duration = 0.0
     state = run_phase(state, ctx)
     state["elapsed"] = int(time.time() - start)
 

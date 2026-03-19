@@ -182,15 +182,83 @@ def action_stop(state: DashboardState) -> dict[str, Any]:
         return {"ok": True, "msg": f"Stopped runner (PID {pid})"}
 
 
+def _get_engine_pid(state: DashboardState) -> int | None:
+    """Read the engine subprocess PID from the PID file."""
+    pid_path = state.paths.base / "engine.pid"
+    try:
+        if pid_path.exists():
+            pid = int(pid_path.read_text().strip())
+            # Verify process exists
+            if IS_WINDOWS:
+                r = subprocess.run(
+                    ["tasklist", "/FI", f"PID eq {pid}"],
+                    capture_output=True, text=True, timeout=3,
+                )
+                if str(pid) in r.stdout:
+                    return pid
+            else:
+                os.kill(pid, 0)  # 0 signal = check if alive
+                return pid
+    except (ValueError, ProcessLookupError, PermissionError, OSError):
+        pass
+    return None
+
+
+def _suspend_engine(pid: int) -> bool:
+    """Suspend (freeze) the engine process."""
+    try:
+        if IS_WINDOWS:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            ntdll = ctypes.windll.ntdll  # type: ignore[attr-defined]
+            handle = kernel32.OpenProcess(0x0800, False, pid)  # PROCESS_SUSPEND_RESUME
+            if handle:
+                ntdll.NtSuspendProcess(handle)
+                kernel32.CloseHandle(handle)
+                return True
+        else:
+            os.kill(pid, signal.SIGSTOP)
+            return True
+    except Exception:
+        return False
+    return False
+
+
+def _resume_engine(pid: int) -> bool:
+    """Resume a suspended engine process."""
+    try:
+        if IS_WINDOWS:
+            import ctypes
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            ntdll = ctypes.windll.ntdll  # type: ignore[attr-defined]
+            handle = kernel32.OpenProcess(0x0800, False, pid)  # PROCESS_SUSPEND_RESUME
+            if handle:
+                ntdll.NtResumeProcess(handle)
+                kernel32.CloseHandle(handle)
+                return True
+        else:
+            os.kill(pid, signal.SIGCONT)
+            return True
+    except Exception:
+        return False
+    return False
+
+
 def action_pause(state: DashboardState) -> dict[str, Any]:
-    """Create the pause sentinel file."""
+    """Pause the engine — suspend the process immediately."""
     state.paths.pause.touch()
-    return {"ok": True, "msg": "Paused — runner will stop after current salt"}
+    pid = _get_engine_pid(state)
+    if pid and _suspend_engine(pid):
+        return {"ok": True, "msg": f"Paused engine (PID {pid}) — process suspended"}
+    return {"ok": True, "msg": "Paused — runner will pause after current salt"}
 
 
 def action_resume(state: DashboardState) -> dict[str, Any]:
-    """Remove the pause sentinel file."""
+    """Resume the engine — unsuspend the process."""
     state.paths.pause.unlink(missing_ok=True)
+    pid = _get_engine_pid(state)
+    if pid and _resume_engine(pid):
+        return {"ok": True, "msg": f"Resumed engine (PID {pid})"}
     return {"ok": True, "msg": "Resumed"}
 
 
