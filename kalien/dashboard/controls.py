@@ -149,18 +149,37 @@ def action_start(state: DashboardState) -> dict[str, Any]:
 
 
 def action_stop(state: DashboardState) -> dict[str, Any]:
-    """Stop the runner (subprocess or thread)."""
+    """Stop the runner and engine. State is preserved for resume."""
     global _runner_thread
+
+    # Kill engine subprocess first (so it doesn't become orphaned)
+    engine_pid = _get_engine_pid(state)
+    if engine_pid:
+        try:
+            # Resume first in case it's suspended, then kill
+            _resume_engine(engine_pid)
+            if IS_WINDOWS:
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(engine_pid)],
+                    capture_output=True, timeout=5,
+                )
+            else:
+                os.kill(engine_pid, signal.SIGKILL)
+        except Exception:
+            pass
+        # Clean up PID file
+        try:
+            (state.paths.base / "engine.pid").unlink(missing_ok=True)
+        except Exception:
+            pass
+
     pid = is_runner_alive(state)
     if not pid:
-        return {"ok": False, "msg": "Not running"}
+        return {"ok": True, "msg": "Stopped (engine killed, state preserved for resume)"}
 
     if pid == "thread":
-        # Thread mode: create the pause file to signal graceful stop,
-        # then the thread will exit after the current salt
         state.paths.pause.touch()
-        # Give it a moment, then just let it wind down
-        return {"ok": True, "msg": "Stopping runner (will finish current salt)"}
+        return {"ok": True, "msg": "Stopping runner (state preserved for resume)"}
     else:
         try:
             if IS_WINDOWS:
@@ -179,7 +198,7 @@ def action_stop(state: DashboardState) -> dict[str, Any]:
                 except subprocess.TimeoutExpired:
                     state.runner_proc.kill()
                 state.runner_proc = None
-        return {"ok": True, "msg": f"Stopped runner (PID {pid})"}
+        return {"ok": True, "msg": f"Stopped (PID {pid}, state preserved for resume)"}
 
 
 def _get_engine_pid(state: DashboardState) -> int | None:
