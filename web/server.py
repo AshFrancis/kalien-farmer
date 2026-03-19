@@ -426,7 +426,22 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_static(self, path: str):
         if path == "/" or path == "":
-            path = "/dashboard.html"
+            # Serve page.html from native dashboard with mode injection
+            page_path = WEB_ROOT.parent / "kalien" / "dashboard" / "page.html"
+            if page_path.exists():
+                html = page_path.read_text(encoding="utf-8")
+                # Inject web mode before first <script> or at end of <head>
+                inject = '<script>window.__FARMER_MODE="web";</script>'
+                html = html.replace("</head>", inject + "\n</head>", 1)
+                data = html.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self._headers()
+                self.end_headers()
+                self.wfile.write(data)
+                return
+            path = "/index.html"
         file_path = SITE_DIR / path.lstrip("/")
         if not file_path.exists() or not file_path.is_file():
             self.send_error(404)

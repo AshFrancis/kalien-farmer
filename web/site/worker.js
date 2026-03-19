@@ -75,7 +75,8 @@ self.onmessage = function (e) {
         const TARGET_SECONDS = 480;
         const maxBeam = Math.floor((TARGET_SECONDS / elapsed) * testBeam);
         // Cap at 24576 — higher widths exceed WASM 2GB memory limit
-        const calibrated = Math.min(49152, Math.max(4096, Math.floor(maxBeam / 1024) * 1024));
+        const maxCap = msg.maxBeam || 49152;
+        const calibrated = Math.min(maxCap, Math.max(4096, Math.floor(maxBeam / 1024) * 1024));
         currentPhase = "idle";
 
         self.postMessage({
@@ -88,7 +89,7 @@ self.onmessage = function (e) {
     } else if (msg.type === "run") {
         currentPhase = "run";
         try {
-            const beam = Math.min(msg.beam, 49152); // WASM memory cap
+            const beam = Math.min(msg.beam, msg.maxBeam || 49152); // WASM memory cap (page sends computed cap)
             const { score, tapeBytes, elapsed } = runEngine(
                 msg.seed, msg.salt || 0, beam, msg.threads || 0
             );

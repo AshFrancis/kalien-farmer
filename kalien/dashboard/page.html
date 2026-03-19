@@ -358,7 +358,7 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
                     <button class="ctrl-btn stop" id="btnStop" onclick="ctrlAction('stop')">STOP</button>
                     <button class="ctrl-btn pause" id="btnPause" onclick="ctrlAction('pause')">PAUSE</button>
                     <button class="ctrl-btn" id="btnResume" onclick="ctrlAction('resume')" style="border-color:var(--green);color:var(--green)">RESUME</button>
-                    <button class="ctrl-btn" onclick="showAddSeed()">+ SEED</button>
+                    <button class="ctrl-btn" id="btnAddSeed" onclick="showAddSeed()">+ SEED</button>
                 </div>
             </div>
         </div>
@@ -424,7 +424,10 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
     <div class="page" id="page-log">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
             <div style="font-family:'Orbitron',sans-serif;font-size:10px;letter-spacing:3px;color:var(--dim)">RUNNER LOG</div>
-            <label style="font-size:12px;color:var(--dim)"><input type="checkbox" id="logAutoScroll" checked> Auto-scroll</label>
+            <div style="display:flex;gap:16px;align-items:center">
+                <button class="ctrl-btn" id="btnClearLog" onclick="webLogLines=[];renderWebLog()" style="font-size:10px;padding:4px 10px;display:none">CLEAR</button>
+                <label style="font-size:12px;color:var(--dim)"><input type="checkbox" id="logAutoScroll" checked> Auto-scroll</label>
+            </div>
         </div>
         <div id="logContainer" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:12px;height:calc(100vh - 220px);overflow-y:auto;font-size:12px;line-height:1.6;white-space:pre-wrap;word-break:break-all;color:var(--text)">
             <span style="color:var(--dim)">Waiting for log data...</span>
@@ -437,6 +440,13 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
             <div class="mission" style="flex:1;min-width:300px">
                 <div class="mission-label">CONFIGURATION</div>
                 <div style="margin-top:16px">
+                    <label style="font-size:11px;color:var(--dim);letter-spacing:1px">QUALIFY BEAM WIDTH</label>
+                    <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
+                        <input type="number" id="settingQualifyBeam" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;width:200px" placeholder="auto (from benchmark)">
+                    </div>
+                    <div style="color:var(--dim);font-size:11px;margin-top:6px">Beam width for qualify runs. Leave blank for auto (benchmark-calibrated).</div>
+                </div>
+                <div style="margin-top:16px">
                     <label style="font-size:11px;color:var(--dim);letter-spacing:1px">PUSH THRESHOLD</label>
                     <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
                         <input type="number" id="settingThreshold" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;width:200px">
@@ -448,7 +458,7 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
                     <div style="display:flex;gap:10px;margin-top:4px;align-items:center">
                         <input type="number" id="settingPushBeam" style="padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:4px;color:var(--text);font-family:'Share Tech Mono',monospace;font-size:14px;width:200px" placeholder="0 = auto (4x qualify)">
                     </div>
-                    <div style="color:var(--dim);font-size:11px;margin-top:6px">Exact beam width for push. Set to 0 for auto (4× calibrated qualify beam).</div>
+                    <div style="color:var(--dim);font-size:11px;margin-top:6px">Exact beam width for push. Set to 0 for auto (4x calibrated qualify beam).</div>
                 </div>
                 <div style="margin-top:16px">
                     <label style="font-size:11px;color:var(--dim);letter-spacing:1px">PUSH DURATION (HOURS)</label>
@@ -500,11 +510,51 @@ a.replay-link:hover { text-decoration: underline; text-shadow: 0 0 8px rgba(0,25
 <div id="toast" class="toast toast-ok" style="display:none"></div>
 
 <script>
+// ── Mode Detection ───────────────────────────────────────────────
+// Injected by web server for web mode, defaults to native
+const FARMER_MODE = window.__FARMER_MODE || 'native';
+const IS_WEB = FARMER_MODE === 'web';
+
+// ── State ────────────────────────────────────────────────────────
 let sortCol = 'seed_id', sortDir = -1;
 let chart = null;
 let _proofs = {};  // seed -> proof status
 let _liveProgress = {};  // frame/salt progress from status.txt
+let _setupData = null;
+let _missionStartTime = null;
+let _missionSeed = null;
+let _qualifyBeamWidth = null;  // dynamic beam width for chart label
 
+// Web-mode state
+let worker = null;
+let wasmReady = false;
+let benchmarkData = null; // { beam, elapsed, ts, cores }
+let farming = false;
+let stopping = false;
+let currentSeed = null;
+let currentSeedId = null;
+let qualifiedSeeds = new Set();
+let wakeLock = null;
+let webLogLines = [];
+const MAX_LOG_LINES = 2000;
+// WASM beam cap based on device memory
+// ~25KB per beam unit (width × branches × struct size + tapes)
+// Leave 500MB headroom for the page and WASM runtime
+const WASM_DEVICE_MEMORY_GB = navigator.deviceMemory || 4; // deviceMemory API (Chrome), fallback 4GB
+const WASM_IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+const WASM_MEMORY_CAP_GB = WASM_IS_MOBILE ? Math.min(WASM_DEVICE_MEMORY_GB, 2) : Math.min(WASM_DEVICE_MEMORY_GB, 4);
+const WASM_MAX_BEAM = Math.min(49152, Math.floor(((WASM_MEMORY_CAP_GB - 0.5) * 1024 * 1024 * 1024) / 25000 / 1024) * 1024);
+
+// ── API Helper ───────────────────────────────────────────────────
+function apiFetch(path, opts = {}) {
+    if (IS_WEB) {
+        const claimant = localStorage.getItem('kalien_claimant') || '';
+        opts.headers = { ...opts.headers, 'X-Claimant': claimant };
+    }
+    return fetch(path, opts).then(r => r.json());
+}
+
+// ── Tabs ─────────────────────────────────────────────────────────
 document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => {
         document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -522,6 +572,7 @@ document.querySelectorAll('th[data-sort]').forEach(th => {
     });
 });
 
+// ── Formatters ───────────────────────────────────────────────────
 function fmtDuration(min) {
     if (min < 0) return 'EXPIRED';
     if (min < 60) return Math.floor(min) + 'm';
@@ -531,6 +582,7 @@ function fmtDuration(min) {
 function fmtScore(n) { return n ? n.toLocaleString() : '\u2014'; }
 function fmtScoreK(n) { return n ? Math.floor(n/1000).toLocaleString() + 'K' : '\u2014'; }
 
+// ── Render Seeds ─────────────────────────────────────────────────
 function renderSeeds(seeds) {
     seeds.sort((a, b) => {
         let av = a[sortCol], bv = b[sortCol];
@@ -558,7 +610,6 @@ function renderSeeds(seeds) {
                 if (blockIdx < done) {
                     html += '<div class="progress-block done"></div>';
                 } else if (isLive && blockIdx === done && partialPct > 0) {
-                    // Partially filled block for current salt
                     html += `<div class="progress-block current" style="background:linear-gradient(90deg, var(--green) ${partialPct}%, var(--bg3) ${partialPct}%)"></div>`;
                 } else {
                     html += '<div class="progress-block pending"></div>';
@@ -570,7 +621,7 @@ function renderSeeds(seeds) {
             const pr = _liveProgress || {};
             const saltsDone = pr.salt || 0;
             let saltsTotal = pr.salt_total || s.run_salt_end || 1;
-            if (saltsTotal >= 9000) saltsTotal = Math.max(saltsDone + 1, 10); // time-boxed: don't show 9999 blocks
+            if (saltsTotal >= 9000) saltsTotal = Math.max(saltsDone + 1, 10);
             const framePct = (pr.frame && pr.total_frames) ? Math.floor((pr.frame / pr.total_frames) * 100) : 0;
             prog = makeBlocks(saltsDone, saltsTotal, true, framePct);
         } else if (s.push_status==='completed') {
@@ -605,6 +656,7 @@ function renderSeeds(seeds) {
     }).join('');
 }
 
+// ── Render Queue (native only) ───────────────────────────────────
 function renderQueue(queue) {
     document.getElementById('queueCount').textContent = queue.length;
     document.getElementById('queuePush').textContent = queue.filter(q=>q.type==='push').length;
@@ -619,21 +671,18 @@ function renderQueue(queue) {
             <td>w=${q.beam.toLocaleString()}</td><td>${q.salts}</td>
             <td style="color:${exp?'var(--red)':q.remaining_min<240?'var(--yellow)':'inherit'}">${fmtDuration(q.remaining_min)}</td>
             <td style="color:var(--dim)">~${fmtDuration(est)}</td>
-            <td><button class="ctrl-btn stop" style="font-size:9px;padding:3px 8px;letter-spacing:1px" onclick="removeQueue(${q.pos})">✕</button></td></tr>`;
+            <td><button class="ctrl-btn stop" style="font-size:9px;padding:3px 8px;letter-spacing:1px" onclick="removeQueue(${q.pos})">&#x2715;</button></td></tr>`;
     }).join('');
 }
 
-let _missionStartTime = null;
-let _missionSeed = null;
-
-function renderMission(status, runnerStatus) {
+// ── Render Mission (native mode) ─────────────────────────────────
+function renderMissionNative(status, runnerStatus) {
     const s = status.state;
     const p = status.progress || {};
     const m = document.getElementById('missionMain');
     const d = document.getElementById('missionDetails');
 
     if (s && s.phase && s.seed) {
-        // Track when this seed started
         if (_missionSeed !== s.seed) {
             _missionSeed = s.seed;
             _missionStartTime = s.started ? new Date(s.started).getTime() : Date.now();
@@ -641,18 +690,15 @@ function renderMission(status, runnerStatus) {
 
         m.innerHTML = `<span class="spinner"></span>\u25b6 ${s.phase.toUpperCase()} <span style="color:var(--yellow)">${s.seed}</span>`;
 
-        // Frame-level progress from status.txt
         let frameInfo = '';
         let etaInfo = '';
         if (p.frame && p.total_frames) {
             const pct = Math.floor((p.frame / p.total_frames) * 100);
-            // Calculate overall progress: (completed salts + current salt progress) / total salts
             const saltsDone = p.salt || 0;
             const saltsTotal = p.salt_total || 1;
             const overallPct = Math.floor(((saltsDone + p.frame / p.total_frames) / saltsTotal) * 100);
             frameInfo = ` \u00b7 frame <span>${p.frame.toLocaleString()}/${p.total_frames.toLocaleString()}</span> (${pct}%)`;
 
-            // ETA based on elapsed time and overall progress
             const elapsed = Date.now() - _missionStartTime;
             if (overallPct > 2 && elapsed > 10000) {
                 const totalEst = elapsed / (overallPct / 100);
@@ -663,7 +709,6 @@ function renderMission(status, runnerStatus) {
             }
         }
 
-        // Elapsed timer
         const elapsed = Date.now() - _missionStartTime;
         const elMin = Math.floor(elapsed / 60000);
         const elSec = Math.floor((elapsed % 60000) / 1000);
@@ -678,7 +723,6 @@ function renderMission(status, runnerStatus) {
 
         d.innerHTML = `w=<span>${(s.beam||0).toLocaleString()}</span> \u00b7 ${saltInfo}${frameInfo} \u00b7 score: <span style="color:var(--green)">${fmtScore(scoreVal)}</span> \u00b7 <span style="color:var(--cyan)">${timer}</span>${etaInfo}`;
     } else if (runnerStatus && runnerStatus.running) {
-        // Parse benchmark progress from status.txt
         let benchDetail = 'Calibrating optimal beam width for your hardware...';
         if (p.frame && p.total_frames) {
             const pct = Math.floor((p.frame / p.total_frames) * 100);
@@ -694,6 +738,54 @@ function renderMission(status, runnerStatus) {
     }
 }
 
+// ── Render Mission (web mode) ────────────────────────────────────
+function renderMissionWeb() {
+    const m = document.getElementById('missionMain');
+    const d = document.getElementById('missionDetails');
+
+    if (!farming && !currentSeed) {
+        m.innerHTML = '<span style="color:var(--dim)">IDLE</span>';
+        d.innerHTML = '';
+        return;
+    }
+
+    if (currentSeed && farming) {
+        const pr = _liveProgress || {};
+
+        const elapsed = _missionStartTime ? Date.now() - _missionStartTime : 0;
+        const elMin = Math.floor(elapsed / 60000);
+        const elSec = Math.floor((elapsed % 60000) / 1000);
+        const timer = `${elMin}:${elSec < 10 ? '0' : ''}${elSec}`;
+
+        const phase = _webPushPhase ? 'PUSH' : 'QUALIFY';
+        m.innerHTML = `<span class="spinner"></span>\u25b6 ${phase} <span style="color:var(--yellow)">${currentSeed}</span>`;
+
+        let frameInfo = '';
+        let etaInfo = '';
+        if (pr.frame && pr.total_frames) {
+            const pct = Math.floor((pr.frame / pr.total_frames) * 100);
+            frameInfo = ` \u00b7 frame <span>${pr.frame.toLocaleString()}/${pr.total_frames.toLocaleString()}</span> (${pct}%)`;
+
+            if (pct > 2 && elapsed > 10000) {
+                const totalEst = elapsed / (pct / 100);
+                const remaining = totalEst - elapsed;
+                const remMin = Math.floor(remaining / 60000);
+                const remSec = Math.floor((remaining % 60000) / 1000);
+                etaInfo = ` \u00b7 <span style="color:var(--dim)">ETA ${remMin}m${remSec < 10 ? '0' : ''}${remSec}s</span>`;
+            }
+        }
+
+        const scoreVal = pr.live_score || 0;
+        const beamW = _webPushPhase ? _webPushBeam : (benchmarkData ? benchmarkData.beam : '?');
+        const saltInfo = _webPushPhase
+            ? `salt <span>${_webPushSaltsDone}/${_webPushSaltsTotal}</span>`
+            : '';
+        const saltSep = saltInfo ? ' \u00b7 ' : '';
+        d.innerHTML = `w=<span>${typeof beamW === 'number' ? beamW.toLocaleString() : beamW}</span>${saltSep}${saltInfo}${frameInfo} \u00b7 score: <span style="color:var(--green)">${fmtScore(scoreVal)}</span> \u00b7 <span style="color:var(--cyan)">${timer}</span>${etaInfo}`;
+    }
+}
+
+// ── Render Stats ─────────────────────────────────────────────────
 function renderStats(seeds) {
     const total = seeds.length;
     const pushed = seeds.filter(s=>s.push_status==='completed').length;
@@ -706,6 +798,7 @@ function renderStats(seeds) {
         <div class="stat"><div class="stat-value" style="color:var(--pink)">${best>0?fmtScore(best):'\u2014'}</div><div class="stat-label">ALL-TIME BEST</div></div>`;
 }
 
+// ── Render Chart ─────────────────────────────────────────────────
 let lastChartHash = '';
 function renderChart(stats) {
     const data = stats.scores || [];
@@ -717,12 +810,13 @@ function renderChart(stats) {
     if (chart) chart.destroy();
     const allVals = data.flatMap(d => [d.qualify, d.push].filter(v => v > 0));
     const yMin = allVals.length ? Math.floor(Math.min(...allVals) * 0.98 / 10000) * 10000 : 0;
+    const qualifyLabel = _qualifyBeamWidth ? 'Qualify (w=' + (_qualifyBeamWidth/1000).toFixed(0) + 'K)' : 'Qualify';
     chart = new Chart(ctx, {
         type: 'line',
         data: {
             labels: data.map(d=>d.seed.substring(0,8)),
             datasets: [{
-                label: 'Qualify (w=32K)', data: data.map(d=>d.qualify||null),
+                label: qualifyLabel, data: data.map(d=>d.qualify||null),
                 borderColor: '#4488ff', borderWidth: 1.5, pointRadius: 2, tension: 0.3, fill: false,
             },{
                 label: 'Push', data: data.map(d=>d.push||null),
@@ -741,38 +835,74 @@ function renderChart(stats) {
     });
 }
 
+// ── Clock ────────────────────────────────────────────────────────
 setInterval(() => { document.getElementById('clock').textContent = new Date().toLocaleTimeString(); }, 1000);
 
+// ── Toast ────────────────────────────────────────────────────────
+function showToast(msg, ok) {
+    const el = document.getElementById('toast');
+    el.className = 'toast ' + (ok ? 'toast-ok' : 'toast-err');
+    el.textContent = msg; el.style.display = 'block';
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+// ── Refresh (main data loop) ─────────────────────────────────────
 async function refresh() {
     try {
-        const [seeds, queue, status, stats, runner] = await Promise.all([
-            fetch('/api/seeds').then(r=>r.json()), fetch('/api/queue').then(r=>r.json()),
-            fetch('/api/status').then(r=>r.json()), fetch('/api/stats').then(r=>r.json()),
-            fetch('/api/runner').then(r=>r.json()),
-        ]);
-        _liveProgress = status.progress || {};
-        renderMission(status, runner); renderSeeds(seeds); renderStats(seeds); renderQueue(queue); renderChart(stats);
+        if (IS_WEB) {
+            const [seeds, stats] = await Promise.all([
+                apiFetch('/api/seeds'), apiFetch('/api/stats'),
+            ]);
+            renderSeeds(seeds);
+            renderStats(seeds);
+            renderChart(stats);
+            // In web mode, mission is driven by worker; only update when idle
+            if (!farming) {
+                const m = document.getElementById('missionMain');
+                const d = document.getElementById('missionDetails');
+                m.innerHTML = '<span style="color:var(--dim)">IDLE</span>';
+                d.innerHTML = seeds.length + ' seeds farmed this session';
+            }
+        } else {
+            const [seeds, queue, status, stats, runner] = await Promise.all([
+                apiFetch('/api/seeds'), apiFetch('/api/queue'),
+                apiFetch('/api/status'), apiFetch('/api/stats'),
+                apiFetch('/api/runner'),
+            ]);
+            _liveProgress = status.progress || {};
+            renderMissionNative(status, runner); renderSeeds(seeds); renderStats(seeds); renderQueue(queue); renderChart(stats);
+        }
     } catch(e) { console.error('Refresh:', e); }
 }
+
 async function refreshProofs() {
-    try { _proofs = await fetch('/api/proofs').then(r=>r.json()); } catch(e) {}
+    try { _proofs = await apiFetch('/api/proofs'); } catch(e) {}
 }
+
 refresh();
 refreshProofs();
 setInterval(refresh, 5000);
-setInterval(refreshProofs, 30000);  // proof status every 30s
+setInterval(refreshProofs, 30000);
 
-// Controls
+// ── Controls ─────────────────────────────────────────────────────
 async function ctrlAction(action) {
+    if (IS_WEB) {
+        // In web mode, START/STOP are handled by startFarming/stopFarming
+        if (action === 'start') { startFarming(); return; }
+        if (action === 'stop') { stopFarming(); return; }
+        return; // pause/resume not available in web mode
+    }
     try {
-        const data = await fetch('/api/'+action, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'}).then(r=>r.json());
+        const data = await apiFetch('/api/'+action, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
         showToast(data.msg, data.ok);
         setTimeout(refreshRunner, 1500);
     } catch(e) { showToast('Request failed: '+e, false); }
 }
+
 async function refreshRunner() {
+    if (IS_WEB) return; // web mode manages its own runner status
     try {
-        const d = await fetch('/api/runner').then(r=>r.json());
+        const d = await apiFetch('/api/runner');
         const el = document.getElementById('runnerStatus');
         if (d.paused) { el.className='runner-status runner-paused'; el.textContent='PAUSED'; }
         else if (d.running) { el.className='runner-status runner-running'; el.textContent='RUNNING (PID '+d.pid+')'; }
@@ -783,17 +913,15 @@ async function refreshRunner() {
         document.getElementById('btnResume').disabled = !d.paused;
     } catch(e) {}
 }
-refreshRunner(); setInterval(refreshRunner, 10000);
 
-function showToast(msg, ok) {
-    const el = document.getElementById('toast');
-    el.className = 'toast ' + (ok ? 'toast-ok' : 'toast-err');
-    el.textContent = msg; el.style.display = 'block';
-    setTimeout(() => { el.style.display = 'none'; }, 4000);
+if (!IS_WEB) {
+    refreshRunner();
+    setInterval(refreshRunner, 10000);
 }
+
+// ── Add Seed (native only) ───────────────────────────────────────
 function showAddSeed() {
     document.getElementById('addSeedModal').classList.add('active');
-    // Pre-fill with current push settings
     const beamInput = document.getElementById('seedBeam');
     const hoursInput = document.getElementById('seedHours');
     const pushBeam = document.getElementById('settingPushBeam');
@@ -808,27 +936,26 @@ async function submitAddSeed() {
     const sid = parseInt(document.getElementById('seedId').value) || 0;
     const beam = parseInt(document.getElementById('seedBeam').value) || 0;
     const hours = parseInt(document.getElementById('seedHours').value) || 0;
-    // salts=9999 with time limit — same as auto push
     try {
-        const data = await fetch('/api/add_seed', {method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({seed, seed_id: sid, beam, salts: 9999, hours})}).then(r=>r.json());
+        const data = await apiFetch('/api/add_seed', {method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({seed, seed_id: sid, beam, salts: 9999, hours})});
         showToast(data.msg, data.ok); if (data.ok) closeAddSeed();
     } catch(e) { showToast('Failed: '+e, false); }
 }
 
 async function removeQueue(pos) {
     try {
-        const data = await fetch('/api/remove_queue', {method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({pos})}).then(r=>r.json());
+        const data = await apiFetch('/api/remove_queue', {method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({pos})});
         showToast(data.msg, data.ok);
         refresh();
     } catch(e) { showToast('Failed: '+e, false); }
 }
 
-// Tapes
+// ── Tapes ────────────────────────────────────────────────────────
 async function refreshTapes() {
     try {
-        const tapes = await fetch('/api/tapes').then(r=>r.json());
+        const tapes = await apiFetch('/api/tapes');
         document.getElementById('tapesCount').textContent = tapes.length;
         const best = Math.max(0, ...tapes.map(t=>t.score));
         document.getElementById('tapesBest').textContent = best > 0 ? best.toLocaleString() : '\u2014';
@@ -844,136 +971,170 @@ async function refreshTapes() {
         }).join('');
     } catch(e) {}
 }
-// Refresh tapes when switching to tab
 document.querySelector('[data-page="tapes"]').addEventListener('click', refreshTapes);
 
-// Settings
+// ── Settings ─────────────────────────────────────────────────────
 function updatePushEstimate() {
     const el = document.getElementById('pushEstimate');
     if (!el) return;
     try {
-        const setup = _setupData;
-        if (!setup || !setup.benchmark_done) { el.textContent = ''; return; }
-        const b = setup.benchmark || {};
-        const rate = b.rate || 0;
-        const qualifyBeam = setup.benchmark?.test_beam ? (b.qualify_beam || 0) : 0;
-        let pushBeam = parseInt(document.getElementById('settingPushBeam').value) || 0;
-        if (!pushBeam) pushBeam = qualifyBeam * 4;
-        const hours = parseInt(document.getElementById('settingPushHours').value) || 3;
-        if (rate > 0 && pushBeam > 0) {
-            const secPerSalt = pushBeam * rate;
-            const estSalts = Math.floor((hours * 3600) / secPerSalt);
-            const minPerSalt = Math.round(secPerSalt / 60);
-            el.innerHTML = `\u2192 w=${pushBeam.toLocaleString()}, ~${minPerSalt}min/salt, ~${estSalts} salts in ${hours}h`;
+        if (IS_WEB) {
+            const b = loadBenchmark();
+            if (!b) { el.textContent = ''; return; }
+            const qualifyBeam = b.beam;
+            let pushBeam = parseInt(document.getElementById('settingPushBeam').value) || 0;
+            if (!pushBeam) pushBeam = Math.min(qualifyBeam * 4, WASM_MAX_BEAM);
+            const hours = parseInt(document.getElementById('settingPushHours').value) || 3;
+            // Estimate: benchmark was at b.beam in b.elapsed seconds. Scale linearly.
+            if (b.elapsed > 0 && qualifyBeam > 0) {
+                const secPerSalt = (pushBeam / qualifyBeam) * b.elapsed;
+                const estSalts = Math.floor((hours * 3600) / secPerSalt);
+                const minPerSalt = Math.round(secPerSalt / 60);
+                el.innerHTML = `\u2192 w=${pushBeam.toLocaleString()}, ~${minPerSalt}min/salt, ~${estSalts} salts in ${hours}h`;
+            }
+        } else {
+            const setup = _setupData;
+            if (!setup || !setup.benchmark_done) { el.textContent = ''; return; }
+            const b = setup.benchmark || {};
+            const rate = b.rate || 0;
+            const qualifyBeam = setup.benchmark?.test_beam ? (b.qualify_beam || 0) : 0;
+            let pushBeam = parseInt(document.getElementById('settingPushBeam').value) || 0;
+            if (!pushBeam) pushBeam = qualifyBeam * 4;
+            const hours = parseInt(document.getElementById('settingPushHours').value) || 3;
+            if (rate > 0 && pushBeam > 0) {
+                const secPerSalt = pushBeam * rate;
+                const estSalts = Math.floor((hours * 3600) / secPerSalt);
+                const minPerSalt = Math.round(secPerSalt / 60);
+                el.innerHTML = `\u2192 w=${pushBeam.toLocaleString()}, ~${minPerSalt}min/salt, ~${estSalts} salts in ${hours}h`;
+            }
         }
     } catch(e) {}
 }
+
 async function loadSettings() {
     try {
-        const s = await fetch('/api/settings').then(r=>r.json());
+        const s = await apiFetch('/api/settings');
+        document.getElementById('settingQualifyBeam').value = s.qualify_beam || '';
         document.getElementById('settingThreshold').value = s.push_threshold || 1190000;
         document.getElementById('settingPushBeam').value = s.push_beam || '';
         document.getElementById('settingPushHours').value = s.push_hours || 3;
     } catch(e) {}
-    // Load benchmark info
-    try {
-        const setup = await fetch('/api/setup').then(r=>r.json());
-        _setupData = setup;
-        const el = document.getElementById('benchmarkInfo');
-        const b = setup.benchmark || {};
-        const hw = b.hardware || {};
-        if (!setup.benchmark_done) {
-            el.innerHTML = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
-                '<div style="color:var(--dim);margin-top:12px">No benchmark yet. Click START to auto-benchmark.</div>';
-            return;
-        }
-        const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--dim)">${label}</span><span>${value}</span></div>`;
-        const fmtBench = (cal, label) => {
-            if (!cal) return row(label, '<span style="color:var(--dim)">N/A</span>');
-            return row(label, `<span style="color:var(--cyan)">w=${(cal.qualify_beam||0).toLocaleString()}</span> <span style="color:var(--dim)">(~${Math.round((cal.qualify_time_est||0)/60)}m${Math.round((cal.qualify_time_est||0)%60)}s)</span>`);
-        };
-        const cpuCal = b.cpu || (b.selected_mode === 'cpu' ? b : null);
-        const gpuCal = b.gpu || (b.selected_mode === 'gpu' ? b : null);
-        const selected = b.selected_mode || 'cpu';
-        const hwDesc = hw.gpu_name
-            ? `${hw.gpu_name} + ${hw.cpu_model || 'CPU'} (${hw.cpu_cores} cores)`
-            : `${hw.cpu_model || 'CPU'} (${hw.cpu_cores} cores)`;
-        let html = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
-            '<div style="margin-top:12px">' +
-            row('Hardware', hwDesc) +
-            fmtBench(cpuCal, 'CPU qualify') +
-            (gpuCal ? fmtBench(gpuCal, 'GPU qualify') : '') +
-            row('Selected', `<span style="color:var(--cyan)">${selected.toUpperCase()}</span>`) +
-            row('Benchmarked', b.timestamp || 'Unknown') +
-            '</div>';
-        // Mode toggle (only if GPU available)
-        if (gpuCal && cpuCal) {
-            html += '<div style="margin-top:12px">' +
-                '<label style="font-size:11px;color:var(--dim);letter-spacing:1px">ENGINE MODE</label>' +
-                '<div style="display:flex;gap:8px;margin-top:4px">' +
-                '<button class="ctrl-btn' + (selected==='cpu'?' start':'') + '" onclick="setEngineMode(\'cpu\')" style="font-size:10px;flex:1">CPU (w=' + (cpuCal.qualify_beam||0).toLocaleString() + ')</button>' +
-                '<button class="ctrl-btn' + (selected==='gpu'?' start':'') + '" onclick="setEngineMode(\'gpu\')" style="font-size:10px;flex:1">GPU (w=' + (gpuCal.qualify_beam||0).toLocaleString() + ')</button>' +
-                '</div></div>';
-        }
-        html += '<div style="margin-top:12px"><button class="ctrl-btn" onclick="reBenchmark()" style="font-size:10px">RE-BENCHMARK</button></div>';
-        el.innerHTML = html;
-        // Update push beam placeholder with auto value
-        const activeCal = selected === 'gpu' ? gpuCal : cpuCal;
-        if (activeCal) {
-            const autoBeam = (activeCal.qualify_beam || 0) * 4;
-            const pushInput = document.getElementById('settingPushBeam');
-            if (autoBeam) pushInput.placeholder = 'auto (' + autoBeam.toLocaleString() + ' = 4\u00d7 qualify)';
-        }
-        setTimeout(updatePushEstimate, 100);
-        // Update push beam placeholder with auto value
-        const autoBeam = (b.qualify_beam || 0) * 4;
-        const pushInput = document.getElementById('settingPushBeam');
-        if (autoBeam) pushInput.placeholder = 'auto (' + autoBeam.toLocaleString() + ' = 4\u00d7 qualify)';
-        setTimeout(updatePushEstimate, 100);
-    } catch(e) {}
+
+    if (IS_WEB) {
+        renderBenchmarkInfoWeb();
+    } else {
+        // Load benchmark info from server (native)
+        try {
+            const setup = await apiFetch('/api/setup');
+            _setupData = setup;
+            // Extract qualify beam width for chart label
+            const b = setup.benchmark || {};
+            const selected = b.selected_mode || 'cpu';
+            const activeCal = selected === 'gpu' ? (b.gpu || b) : (b.cpu || b);
+            if (activeCal && activeCal.qualify_beam) {
+                _qualifyBeamWidth = activeCal.qualify_beam;
+                lastChartHash = ''; // force chart re-render with new label
+            }
+            const el = document.getElementById('benchmarkInfo');
+            const hw = b.hardware || {};
+            if (!setup.benchmark_done) {
+                el.innerHTML = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
+                    '<div style="color:var(--dim);margin-top:12px">No benchmark yet. Click START to auto-benchmark.</div>';
+                return;
+            }
+            const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--dim)">${label}</span><span>${value}</span></div>`;
+            const fmtBench = (cal, label) => {
+                if (!cal) return row(label, '<span style="color:var(--dim)">N/A</span>');
+                return row(label, `<span style="color:var(--cyan)">w=${(cal.qualify_beam||0).toLocaleString()}</span> <span style="color:var(--dim)">(~${Math.round((cal.qualify_time_est||0)/60)}m${Math.round((cal.qualify_time_est||0)%60)}s)</span>`);
+            };
+            const cpuCal = b.cpu || (b.selected_mode === 'cpu' ? b : null);
+            const gpuCal = b.gpu || (b.selected_mode === 'gpu' ? b : null);
+            const hwDesc = hw.gpu_name
+                ? `${hw.gpu_name} + ${hw.cpu_model || 'CPU'} (${hw.cpu_cores} cores)`
+                : `${hw.cpu_model || 'CPU'} (${hw.cpu_cores} cores)`;
+            let html = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
+                '<div style="margin-top:12px">' +
+                row('Hardware', hwDesc) +
+                fmtBench(cpuCal, 'CPU qualify') +
+                (gpuCal ? fmtBench(gpuCal, 'GPU qualify') : '') +
+                row('Selected', `<span style="color:var(--cyan)">${selected.toUpperCase()}</span>`) +
+                row('Benchmarked', b.timestamp || 'Unknown') +
+                '</div>';
+            if (gpuCal && cpuCal) {
+                html += '<div style="margin-top:12px">' +
+                    '<label style="font-size:11px;color:var(--dim);letter-spacing:1px">ENGINE MODE</label>' +
+                    '<div style="display:flex;gap:8px;margin-top:4px">' +
+                    '<button class="ctrl-btn' + (selected==='cpu'?' start':'') + '" onclick="setEngineMode(\'cpu\')" style="font-size:10px;flex:1">CPU (w=' + (cpuCal.qualify_beam||0).toLocaleString() + ')</button>' +
+                    '<button class="ctrl-btn' + (selected==='gpu'?' start':'') + '" onclick="setEngineMode(\'gpu\')" style="font-size:10px;flex:1">GPU (w=' + (gpuCal.qualify_beam||0).toLocaleString() + ')</button>' +
+                    '</div></div>';
+            }
+            html += '<div style="margin-top:12px"><button class="ctrl-btn" onclick="reBenchmark()" style="font-size:10px">RE-BENCHMARK</button></div>';
+            el.innerHTML = html;
+            // Update push beam placeholder with auto value
+            if (activeCal) {
+                const autoBeam = (activeCal.qualify_beam || 0) * 4;
+                const pushInput = document.getElementById('settingPushBeam');
+                if (autoBeam) pushInput.placeholder = 'auto (' + autoBeam.toLocaleString() + ' = 4\u00d7 qualify)';
+            }
+            setTimeout(updatePushEstimate, 100);
+        } catch(e) {}
+    }
 }
+
 async function setEngineMode(mode) {
     try {
-        await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
+        await apiFetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
             body: JSON.stringify({engine_mode: mode})});
         showToast('Engine mode set to ' + mode.toUpperCase() + '. Restart runner to apply.', true);
         ctrlAction('stop');
         loadSettings();
     } catch(e) { showToast('Failed: '+e, false); }
 }
+
 function reBenchmark() {
-    ctrlAction('stop');
-    setTimeout(() => {
-        // Delete benchmark.json by saving empty benchmark flag
-        fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({force_benchmark: true})});
-        showToast('Benchmark cleared. Restart the runner to re-benchmark.', true);
-    }, 500);
+    if (IS_WEB) {
+        localStorage.removeItem('kalien_benchmark');
+        benchmarkData = null;
+        renderBenchmarkInfoWeb();
+        showToast('Benchmark cleared. Next START FARMING will re-benchmark.', true);
+        webLogMsg('Benchmark data cleared. Will re-benchmark on next start.');
+    } else {
+        ctrlAction('stop');
+        setTimeout(() => {
+            apiFetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({force_benchmark: true})});
+            showToast('Benchmark cleared. Restart the runner to re-benchmark.', true);
+        }, 500);
+    }
 }
+
 async function saveSettings() {
+    const qualifyBeam = parseInt(document.getElementById('settingQualifyBeam').value) || 0;
     const threshold = parseInt(document.getElementById('settingThreshold').value) || 1190000;
     const pushBeam = parseInt(document.getElementById('settingPushBeam').value) || 0;
     const pushHours = parseInt(document.getElementById('settingPushHours').value) || 3;
     try {
-        const data = await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({push_threshold: threshold, push_beam: pushBeam, push_hours: pushHours})}).then(r=>r.json());
+        const data = await apiFetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({qualify_beam: qualifyBeam, push_threshold: threshold, push_beam: pushBeam, push_hours: pushHours})});
         showToast(data.ok ? 'Settings saved' : 'Failed', data.ok);
     } catch(e) { showToast('Failed: '+e, false); }
 }
+
 loadSettings();
 document.querySelector('[data-page="settings"]').addEventListener('click', () => { loadSettings(); setTimeout(updatePushEstimate, 500); });
 document.getElementById('settingPushBeam').addEventListener('input', updatePushEstimate);
 document.getElementById('settingPushHours').addEventListener('input', updatePushEstimate);
 
-// Log viewer
+// ── Log Viewer ───────────────────────────────────────────────────
 let _logInterval = null;
-async function refreshLog() {
+
+// Native log: read from server
+async function refreshLogNative() {
     try {
-        const data = await fetch('/api/log').then(r=>r.json());
+        const data = await apiFetch('/api/log');
         const el = document.getElementById('logContainer');
         if (data.lines.length) {
             el.innerHTML = data.lines.map(l => {
-                // Color code log lines
                 let cls = '';
                 if (l.includes('ERROR') || l.includes('FAIL') || l.includes('FATAL')) cls = 'color:var(--red)';
                 else if (l.includes('WARNING') || l.includes('WARN')) cls = 'color:var(--yellow)';
@@ -991,15 +1152,60 @@ async function refreshLog() {
         }
     } catch(e) {}
 }
+
+// Web log: in-memory
+function webLogMsg(text, color) {
+    const ts = new Date().toLocaleTimeString();
+    webLogLines.push({ ts, text, color: color || '' });
+    if (webLogLines.length > MAX_LOG_LINES) webLogLines.splice(0, webLogLines.length - MAX_LOG_LINES);
+    const logPage = document.getElementById('page-log');
+    if (logPage.classList.contains('active')) {
+        renderWebLog();
+    }
+}
+
+function renderWebLog() {
+    const el = document.getElementById('logContainer');
+    if (!webLogLines.length) {
+        el.innerHTML = '<span style="color:var(--dim)">No log data yet. Click START FARMING to begin.</span>';
+        return;
+    }
+    el.innerHTML = webLogLines.map(l => {
+        let cls = '';
+        if (l.color) {
+            cls = 'color:var(--' + l.color + ')';
+        } else if (l.text.includes('ERROR') || l.text.includes('FAIL') || l.text.includes('FATAL')) {
+            cls = 'color:var(--red)';
+        } else if (l.text.includes('WARNING') || l.text.includes('WARN')) {
+            cls = 'color:var(--yellow)';
+        } else if (l.text.includes('NEW BEST') || l.text.includes('SUBMITTED')) {
+            cls = 'color:var(--green)';
+        } else if (l.text.includes('Benchmark') || l.text.includes('Calibrated')) {
+            cls = 'color:var(--cyan)';
+        } else if (l.text.includes('===')) {
+            cls = 'color:var(--cyan);font-weight:bold';
+        } else if (l.text.includes('DONE')) {
+            cls = 'color:var(--purple)';
+        }
+        const line = '[' + l.ts + '] ' + l.text;
+        return cls ? `<span style="${cls}">${line}</span>` : line;
+    }).join('\n');
+    if (document.getElementById('logAutoScroll').checked) {
+        el.scrollTop = el.scrollHeight;
+    }
+}
+
 document.querySelector('[data-page="log"]').addEventListener('click', () => {
-    refreshLog();
-    if (_logInterval) clearInterval(_logInterval);
-    _logInterval = setInterval(refreshLog, 3000);
+    if (IS_WEB) {
+        renderWebLog();
+    } else {
+        refreshLogNative();
+        if (_logInterval) clearInterval(_logInterval);
+        _logInterval = setInterval(refreshLogNative, 3000);
+    }
 });
 
 // ── Setup ────────────────────────────────────────────────────────
-let _setupData = null;
-
 function buildEngineCmd(os) {
     if (os === 'macOS') return 'cd engine && make';
     if (os === 'Windows') return 'cd engine && make   (requires MinGW or WSL)';
@@ -1007,6 +1213,8 @@ function buildEngineCmd(os) {
 }
 
 function renderSetupHTML(s, isOverlay) {
+    if (IS_WEB) return renderSetupHTMLWeb(isOverlay);
+
     const ok = s.engine_found && s.settings_configured;
     const ind = (v) => v
         ? '<div class="setup-indicator ok">&#x2713;</div>'
@@ -1049,7 +1257,7 @@ function renderSetupHTML(s, isOverlay) {
     html += '<button class="ctrl-btn start" onclick="saveClaimant(\'' + (isOverlay?'O':'P') + '\')">SAVE</button>';
     html += '</div></div></div>';
 
-    // Start farming button — show as soon as engine + claimant are set
+    // Start farming button
     const canStart = s.engine_found && s.settings_configured;
     if (canStart) {
         html += '<div class="setup-ready">';
@@ -1063,28 +1271,108 @@ function renderSetupHTML(s, isOverlay) {
         html += '</div>';
     }
 
-    // System info
     html += '<div class="setup-info">System: <span>' + s.os + '</span> &middot; Python <span>' + s.python_version + '</span></div>';
 
     if (!isOverlay) html += '</div>';
     return html;
 }
 
+function renderSetupHTMLWeb(isOverlay) {
+    const claimant = localStorage.getItem('kalien_claimant') || '';
+    const hasClaimant = claimant.length > 0;
+    const hasBenchmark = !!loadBenchmark();
+
+    const ind = (v) => v
+        ? '<div class="setup-indicator ok">&#x2713;</div>'
+        : '<div class="setup-indicator fail">&#x2717;</div>';
+
+    let html = '';
+    if (isOverlay) {
+        html += '<h2>FIRST RUN SETUP</h2>';
+        html += '<div class="setup-subtitle">Set your claimant address to start farming</div>';
+    } else {
+        html += '<div class="mission" style="max-width:560px"><div class="mission-label">SETUP CHECKLIST</div>';
+    }
+
+    // Step 1: Claimant
+    html += '<div class="setup-step">';
+    html += ind(hasClaimant);
+    html += '<div class="setup-step-content">';
+    html += '<div class="setup-step-title">1. Set Claimant Address</div>';
+    if (hasClaimant) {
+        html += '<div class="setup-step-detail">Configured: <code>' + claimant.substring(0, 8) + '...' + claimant.substring(claimant.length - 4) + '</code></div>';
+    } else {
+        html += '<div class="setup-step-detail">Your Stellar address for claiming rewards</div>';
+    }
+    html += '<div class="setup-input-row">';
+    html += '<input type="text" id="setupClaimant' + (isOverlay ? 'O' : 'P') + '" placeholder="G... or C... address" value="' + (claimant || '') + '">';
+    html += '<button class="ctrl-btn start" onclick="saveClaimant(\'' + (isOverlay ? 'O' : 'P') + '\')">SAVE</button>';
+    html += '</div></div></div>';
+
+    // Step 2: Benchmark
+    html += '<div class="setup-step">';
+    html += ind(hasBenchmark);
+    html += '<div class="setup-step-content">';
+    html += '<div class="setup-step-title">2. Browser Benchmark</div>';
+    if (hasBenchmark) {
+        const b = loadBenchmark();
+        html += '<div class="setup-step-detail">Calibrated beam width: <code>w=' + b.beam + '</code> (' + b.elapsed + 's test run)</div>';
+    } else {
+        html += '<div class="setup-step-detail">Auto-runs on first START FARMING. Calibrates beam width for your hardware (~2 min).</div>';
+    }
+    html += '</div></div>';
+
+    // Start farming button
+    if (hasClaimant) {
+        html += '<div class="setup-ready">';
+        if (hasBenchmark) {
+            html += '<div class="setup-ready-msg">READY TO FARM!</div>';
+        } else {
+            html += '<div class="setup-ready-msg">SETUP COMPLETE</div>';
+            html += '<div class="setup-step-detail" style="margin-bottom:12px">First run will benchmark your browser (~2 min), then farming begins automatically.</div>';
+        }
+        html += '<button class="ctrl-btn start" style="font-size:16px;padding:14px 40px;letter-spacing:3px" onclick="dismissSetup();startFarming()">START FARMING</button>';
+        html += '</div>';
+    }
+
+    html += '<div class="setup-info">Browser: <span>' + navigator.userAgent.split(' ').slice(-2).join(' ') + '</span> &middot; Cores: <span>' + (navigator.hardwareConcurrency || '?') + '</span></div>';
+
+    if (!isOverlay) html += '</div>';
+    return html;
+}
+
 async function refreshSetup() {
-    try {
-        const s = await fetch('/api/setup').then(r=>r.json());
-        _setupData = s;
-        // Render the setup tab page
-        document.getElementById('setupContent').innerHTML = renderSetupHTML(s, false);
-        // Show/hide overlay based on setup completeness
+    if (IS_WEB) {
+        document.getElementById('setupContent').innerHTML = renderSetupHTMLWeb(false);
+        const claimant = localStorage.getItem('kalien_claimant') || '';
         const overlay = document.getElementById('setupOverlay');
-        if (!s.engine_found || !s.settings_configured) {
-            document.getElementById('setupOverlayContent').innerHTML = renderSetupHTML(s, true);
+        if (!claimant) {
+            document.getElementById('setupOverlayContent').innerHTML = renderSetupHTMLWeb(true);
             overlay.classList.add('active');
         } else {
             overlay.classList.remove('active');
         }
-    } catch(e) { console.error('Setup refresh:', e); }
+    } else {
+        try {
+            const s = await apiFetch('/api/setup');
+            _setupData = s;
+            // Extract qualify beam width for chart label
+            const b = s.benchmark || {};
+            const selected = b.selected_mode || 'cpu';
+            const activeCal = selected === 'gpu' ? (b.gpu || b) : (b.cpu || b);
+            if (activeCal && activeCal.qualify_beam) {
+                _qualifyBeamWidth = activeCal.qualify_beam;
+            }
+            document.getElementById('setupContent').innerHTML = renderSetupHTML(s, false);
+            const overlay = document.getElementById('setupOverlay');
+            if (!s.engine_found || !s.settings_configured) {
+                document.getElementById('setupOverlayContent').innerHTML = renderSetupHTML(s, true);
+                overlay.classList.add('active');
+            } else {
+                overlay.classList.remove('active');
+            }
+        } catch(e) { console.error('Setup refresh:', e); }
+    }
 }
 
 function dismissSetup() {
@@ -1095,20 +1383,537 @@ async function saveClaimant(suffix) {
     const input = document.getElementById('setupClaimant' + suffix);
     const addr = input.value.trim();
     if (!addr) { showToast('Enter an address', false); return; }
-    try {
-        const data = await fetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({claimant: addr})}).then(r=>r.json());
-        if (data.ok) {
-            showToast('Claimant address saved', true);
-            refreshSetup();
-        } else {
-            showToast('Failed to save', false);
+
+    if (IS_WEB) {
+        // Save to localStorage (source of truth for web mode)
+        localStorage.setItem('kalien_claimant', addr);
+        // Also save to server
+        try {
+            await apiFetch('/api/settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ claimant: addr }),
+            });
+        } catch (e) {
+            console.error('Server save error:', e);
         }
-    } catch(e) { showToast('Failed: '+e, false); }
+        showToast('Claimant address saved', true);
+        webEnableStart();
+        refreshSetup();
+    } else {
+        try {
+            const data = await apiFetch('/api/settings', {method:'POST', headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({claimant: addr})});
+            if (data.ok) {
+                showToast('Claimant address saved', true);
+                refreshSetup();
+            } else {
+                showToast('Failed to save', false);
+            }
+        } catch(e) { showToast('Failed: '+e, false); }
+    }
 }
 
 refreshSetup();
 document.querySelector('[data-page="setup"]').addEventListener('click', refreshSetup);
+
+// ══════════════════════════════════════════════════════════════════
+// ██ WEB MODE (WASM WORKER)
+// ══════════════════════════════════════════════════════════════════
+if (IS_WEB) {
+    // Hide native-only UI elements
+    document.getElementById('btnPause').style.display = 'none';
+    document.getElementById('btnResume').style.display = 'none';
+    document.getElementById('btnAddSeed').style.display = 'none';
+    document.querySelector('[data-page="queue"]').style.display = 'none';
+
+    // Show web-only UI elements
+    document.getElementById('btnClearLog').style.display = '';
+
+    // Change button labels for web mode
+    document.getElementById('btnStart').textContent = 'START FARMING';
+    document.getElementById('btnStart').disabled = true;  // until WASM loads
+
+    // Update header/footer for web
+    document.querySelector('.title').textContent = 'KALIEN WEB FARMER';
+    document.querySelector('.footer').textContent = 'KALIEN BEAM SEARCH ENGINE \u00b7 WEB FARMER';
+    document.getElementById('runnerStatus').className = 'runner-status runner-paused';
+    document.getElementById('runnerStatus').textContent = 'LOADING ENGINE...';
+}
+
+// Web-mode push state
+let _webPushPhase = false;
+let _webPushBeam = 0;
+let _webPushSaltsDone = 0;
+let _webPushSaltsTotal = 0;
+let _webPushStartTime = 0;
+let _webPushHoursLimit = 3;
+
+// ── Web Runner Status ────────────────────────────────────────────
+function webUpdateRunnerStatus(state) {
+    const el = document.getElementById('runnerStatus');
+    const states = {
+        'LOADING':      { cls: 'runner-paused',  text: 'LOADING ENGINE...' },
+        'READY':        { cls: 'runner-stopped',  text: 'READY' },
+        'BENCHMARKING': { cls: 'runner-running',  text: 'BENCHMARKING...' },
+        'FARMING':      { cls: 'runner-running',  text: 'FARMING' },
+        'SUBMITTING':   { cls: 'runner-running',  text: 'SUBMITTING...' },
+        'WAITING':      { cls: 'runner-paused',   text: 'WAITING FOR SEED' },
+        'STOPPED':      { cls: 'runner-stopped',  text: 'STOPPED' },
+    };
+    const s = states[state] || states['STOPPED'];
+    el.className = 'runner-status ' + s.cls;
+    el.textContent = s.text;
+
+    document.getElementById('btnStart').disabled = (state === 'FARMING' || state === 'BENCHMARKING' || state === 'SUBMITTING' || state === 'LOADING');
+    document.getElementById('btnStop').disabled = (state !== 'FARMING' && state !== 'WAITING' && state !== 'BENCHMARKING');
+}
+
+function webEnableStart() {
+    if (!IS_WEB) return;
+    const claimant = localStorage.getItem('kalien_claimant') || '';
+    if (claimant && wasmReady) {
+        document.getElementById('btnStart').disabled = false;
+    }
+}
+
+// ── Benchmark Cache ──────────────────────────────────────────────
+function saveBenchmark(data) {
+    localStorage.setItem('kalien_benchmark', JSON.stringify(data));
+}
+function loadBenchmark() {
+    try {
+        const d = JSON.parse(localStorage.getItem('kalien_benchmark'));
+        if (!d || Date.now() - d.ts > 7 * 86400000) return null;
+        if (d.cores !== navigator.hardwareConcurrency) return null;
+        if (d.beam > WASM_MAX_BEAM) { d.beam = WASM_MAX_BEAM; }
+        return d;
+    } catch { return null; }
+}
+
+function renderBenchmarkInfoWeb() {
+    const el = document.getElementById('benchmarkInfo');
+    const b = loadBenchmark();
+    const row = (label, value) => `<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border)"><span style="color:var(--dim)">${label}</span><span>${value}</span></div>`;
+
+    if (!b) {
+        el.innerHTML = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
+            '<div style="color:var(--dim);margin-top:12px">No benchmark yet. Click START FARMING to auto-benchmark.</div>';
+        return;
+    }
+
+    // Set qualify beam width for chart label
+    _qualifyBeamWidth = b.beam;
+    lastChartHash = ''; // force chart re-render
+
+    // Update push beam placeholder
+    const autoBeam = Math.min(b.beam * 4, WASM_MAX_BEAM);
+    const pushInput = document.getElementById('settingPushBeam');
+    if (autoBeam) pushInput.placeholder = 'auto (' + autoBeam.toLocaleString() + ' = 4\u00d7 qualify, max ' + WASM_MAX_BEAM.toLocaleString() + ')';
+
+    el.innerHTML = '<div class="mission-label">HARDWARE &amp; BENCHMARK</div>' +
+        '<div style="margin-top:12px">' +
+        row('Mode', '<span style="color:var(--cyan)">WASM (Browser)</span>') +
+        row('Calibrated beam', '<span style="color:var(--cyan)">w=' + b.beam.toLocaleString() + '</span>') +
+        row('Benchmark time', b.elapsed + 's (w=4096)') +
+        row('CPU cores', (b.cores || navigator.hardwareConcurrency || '?')) +
+        row('Benchmarked', new Date(b.ts).toLocaleString()) +
+        '</div>' +
+        '<div style="margin-top:12px"><button class="ctrl-btn" onclick="reBenchmark()" style="font-size:10px">RE-BENCHMARK</button></div>';
+
+    setTimeout(updatePushEstimate, 100);
+}
+
+// ── Wake Lock ────────────────────────────────────────────────────
+async function acquireWakeLock() {
+    try {
+        if ('wakeLock' in navigator) {
+            wakeLock = await navigator.wakeLock.request('screen');
+            wakeLock.addEventListener('release', () => { wakeLock = null; });
+            webLogMsg('Wake lock acquired (screen will stay on)');
+        }
+    } catch (e) {
+        webLogMsg('Wake lock unavailable: ' + e.message, 'yellow');
+    }
+}
+function releaseWakeLock() {
+    if (wakeLock) {
+        wakeLock.release();
+        wakeLock = null;
+        webLogMsg('Wake lock released');
+    }
+}
+
+// ── ArrayBuffer to Base64 ────────────────────────────────────────
+function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    return btoa(binary);
+}
+
+// ── Fetch Seed ───────────────────────────────────────────────────
+async function fetchSeed() {
+    try {
+        const data = await fetch('/proxy/seed/current').then(r => r.json());
+        if (!data.seed && data.seed !== 0) return null;
+        return { seedId: data.seed_id, seedHex: data.seed.toString(16).toUpperCase().padStart(8, '0') };
+    } catch (e) {
+        webLogMsg('Failed to fetch seed: ' + e.message, 'red');
+        return null;
+    }
+}
+
+// ── Beam helpers ────────────────────────────────────────────────
+function getEffectiveQualifyBeam() {
+    const userBeam = parseInt(document.getElementById('settingQualifyBeam').value) || 0;
+    const benchBeam = benchmarkData ? benchmarkData.beam : 8192;
+    let beam = userBeam || benchBeam;
+    if (IS_WEB) beam = Math.min(beam, WASM_MAX_BEAM);
+    return beam;
+}
+function getEffectivePushBeam() {
+    const userBeam = parseInt(document.getElementById('settingPushBeam').value) || 0;
+    let beam = userBeam || (getEffectiveQualifyBeam() * 4);
+    if (IS_WEB) beam = Math.min(beam, WASM_MAX_BEAM);
+    return beam;
+}
+
+// ── Start / Stop Farming ─────────────────────────────────────────
+async function startFarming() {
+    if (!IS_WEB) { ctrlAction('start'); return; }
+    if (!wasmReady) {
+        showToast('Engine not ready yet', false);
+        return;
+    }
+    const claimant = localStorage.getItem('kalien_claimant') || '';
+    if (!claimant) {
+        showToast('Set your claimant address first (SETUP tab)', false);
+        document.querySelector('[data-page="setup"]').click();
+        return;
+    }
+    farming = true;
+    stopping = false;
+    await acquireWakeLock();
+    webLogMsg('=== FARMING STARTED ===', 'cyan');
+
+    if (!benchmarkData) {
+        webUpdateRunnerStatus('BENCHMARKING');
+        webLogMsg('Running benchmark (w=4096)...');
+        worker.postMessage({ type: 'benchmark', threads: 0, maxBeam: WASM_MAX_BEAM });
+        return; // benchmark_result handler will call startNextSeed
+    }
+    await startNextSeed();
+}
+
+function stopFarming() {
+    if (!IS_WEB) { ctrlAction('stop'); return; }
+    stopping = true;
+    webLogMsg('Stopping after current run...', 'yellow');
+    showToast('Stopping after current run finishes', true);
+    if (!currentSeed || document.getElementById('runnerStatus').textContent === 'WAITING FOR SEED') {
+        farming = false;
+        stopping = false;
+        currentSeed = null;
+        currentSeedId = null;
+        _liveProgress = {};
+        _webPushPhase = false;
+        webUpdateRunnerStatus('STOPPED');
+        renderMissionWeb();
+        releaseWakeLock();
+        webLogMsg('=== FARMING STOPPED ===', 'cyan');
+    }
+}
+
+// ── Seed Loop ────────────────────────────────────────────────────
+async function startNextSeed() {
+    if (!farming || stopping) {
+        farming = false;
+        stopping = false;
+        currentSeed = null;
+        currentSeedId = null;
+        _liveProgress = {};
+        _webPushPhase = false;
+        webUpdateRunnerStatus('STOPPED');
+        renderMissionWeb();
+        releaseWakeLock();
+        webLogMsg('=== FARMING STOPPED ===', 'cyan');
+        return;
+    }
+
+    webUpdateRunnerStatus('FARMING');
+
+    const seedData = await fetchSeed();
+    if (!seedData) {
+        webLogMsg('Could not fetch seed, retrying in 15s...', 'yellow');
+        webUpdateRunnerStatus('WAITING');
+        setTimeout(() => { if (farming && !stopping) startNextSeed(); else { farming = false; stopping = false; webUpdateRunnerStatus('STOPPED'); renderMissionWeb(); releaseWakeLock(); } }, 15000);
+        return;
+    }
+
+    if (qualifiedSeeds.has(seedData.seedHex)) {
+        webUpdateRunnerStatus('WAITING');
+        webLogMsg('Already qualified ' + seedData.seedHex + ' \u2014 waiting for new seed...');
+        renderMissionWeb();
+        setTimeout(() => { if (farming && !stopping) startNextSeed(); else { farming = false; stopping = false; webUpdateRunnerStatus('STOPPED'); renderMissionWeb(); releaseWakeLock(); } }, 15000);
+        return;
+    }
+
+    currentSeed = seedData.seedHex;
+    currentSeedId = seedData.seedId;
+    _liveProgress = {};
+    _missionSeed = currentSeed;
+    _missionStartTime = Date.now();
+    _webPushPhase = false;
+    const qualifyBeam = getEffectiveQualifyBeam();
+    webLogMsg('QUALIFY ' + currentSeed + ' (w=' + qualifyBeam.toLocaleString() + ')');
+    renderMissionWeb();
+
+    worker.postMessage({
+        type: 'run',
+        seed: parseInt(currentSeed, 16),
+        seedId: currentSeedId,
+        salt: 0,
+        beam: qualifyBeam,
+        threads: 0,
+        phase: 'qualify',
+    });
+}
+
+// ── Handle Progress ──────────────────────────────────────────────
+function webHandleProgress(msg) {
+    if (msg.phase === 'benchmark') {
+        const m = document.getElementById('missionMain');
+        const d = document.getElementById('missionDetails');
+        m.innerHTML = '<span class="spinner"></span><span style="color:var(--cyan)">\u25b6 BENCHMARKING</span>';
+        const pct = Math.floor(msg.frame / msg.frames * 100);
+        d.innerHTML = 'Running test beam \u00b7 frame <span>' + msg.frame.toLocaleString() + '/' + msg.frames.toLocaleString() + '</span> (' + pct + '%) \u00b7 score: <span style="color:var(--green)">' + msg.score.toLocaleString() + '</span>';
+    } else {
+        _liveProgress = {
+            frame: msg.frame, total_frames: msg.frames,
+            live_score: msg.score,
+            salt: _webPushPhase ? _webPushSaltsDone : 0,
+            salt_total: _webPushPhase ? _webPushSaltsTotal : 1,
+        };
+        renderMissionWeb();
+    }
+}
+
+// ── Handle Result ────────────────────────────────────────────────
+async function webHandleResult(msg) {
+    const score = msg.score;
+    const seedHex = msg.seed.toString(16).toUpperCase().padStart(8, '0');
+    webLogMsg('DONE: ' + seedHex + ' score=' + score.toLocaleString() + ' (' + msg.elapsed + 's)', 'purple');
+
+    // Clone tape bytes before any async work
+    let tapeB64 = '';
+    let tapeForSubmit = null;
+    if (msg.tapeBytes) {
+        const tapeCopy = new Uint8Array(msg.tapeBytes).slice();
+        tapeB64 = arrayBufferToBase64(tapeCopy.buffer);
+        tapeForSubmit = tapeCopy;
+    }
+
+    // Submit tape via proxy
+    const claimant = localStorage.getItem('kalien_claimant') || '';
+    let jobId = '';
+    if (claimant && tapeForSubmit) {
+        webLogMsg('Submitting ' + seedHex + ': ' + score.toLocaleString() + '...');
+        webUpdateRunnerStatus('SUBMITTING');
+        try {
+            const resp = await fetch('/proxy/proofs/jobs?claimant=' + encodeURIComponent(claimant) + '&seed_id=' + msg.seedId, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/octet-stream' },
+                body: tapeForSubmit,
+            });
+            const data = await resp.json();
+            if (data.success) {
+                jobId = data.job?.jobId || data.job?.job_id || '';
+                webLogMsg('SUBMITTED! Job=' + jobId, 'green');
+            } else {
+                webLogMsg('Submission failed: ' + (data.error || 'unknown'), 'red');
+            }
+        } catch (e) {
+            webLogMsg('Submission error: ' + e.message, 'red');
+        }
+    }
+
+    // Record to server DB
+    try {
+        await apiFetch('/api/record_run', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                seed_hex: seedHex,
+                seed_id: msg.seedId,
+                score,
+                salt: _webPushPhase ? ('0x' + (msg.pushSalt + 1).toString(16).padStart(8, '0')) : '0x00000000',
+                elapsed: Math.round(msg.elapsed),
+                job_id: jobId,
+                tape_b64: tapeB64,
+            }),
+        });
+    } catch (e) {
+        webLogMsg('Record error: ' + e.message, 'red');
+    }
+
+    // Push logic: after qualify, if score exceeds threshold, run push salts time-boxed
+    const pushThreshold = parseInt(document.getElementById('settingThreshold').value) || 1190000;
+    const wasQualify = !msg.phase || msg.phase === 'qualify';
+    const isPush = msg.phase === 'push';
+
+    if (isPush && farming && !stopping) {
+        _webPushSaltsDone++;
+        // Check time budget
+        const elapsedMs = Date.now() - _webPushStartTime;
+        const limitMs = _webPushHoursLimit * 3600 * 1000;
+        if (elapsedMs < limitMs) {
+            const nextSalt = _webPushSaltsDone + 1;  // salt index (1-based for push)
+            webLogMsg('  Push salt ' + (_webPushSaltsDone + 1) + ' (w=' + _webPushBeam.toLocaleString() + ') [' + Math.floor(elapsedMs/60000) + 'm/' + (_webPushHoursLimit*60) + 'm]');
+            _liveProgress = {};
+            _missionStartTime = Date.now();
+            worker.postMessage({
+                type: 'run', seed: msg.seed, seedId: msg.seedId,
+                salt: nextSalt, beam: _webPushBeam, threads: 0,
+                phase: 'push', pushSalt: _webPushSaltsDone, pushTotal: _webPushSaltsTotal,
+            });
+            renderMissionWeb();
+            return;
+        } else {
+            webLogMsg('  Push time limit reached (' + _webPushHoursLimit + 'h) after ' + _webPushSaltsDone + ' salts', 'yellow');
+        }
+    }
+
+    if (wasQualify && score > pushThreshold && benchmarkData && farming && !stopping) {
+        qualifiedSeeds.add(seedHex);
+        // Start push phase
+        const pushBeam = getEffectivePushBeam();
+        const pushHours = parseInt(document.getElementById('settingPushHours').value) || 3;
+
+        // Estimate total salts for display
+        // Use qualify run time to estimate push salt time
+        const qualifyElapsed = msg.elapsed; // seconds for qualify
+        const pushSaltEst = (pushBeam / benchmarkData.beam) * qualifyElapsed;
+        const estTotalSalts = Math.max(1, Math.floor((pushHours * 3600) / pushSaltEst));
+
+        _webPushPhase = true;
+        _webPushBeam = pushBeam;
+        _webPushSaltsDone = 0;
+        _webPushSaltsTotal = estTotalSalts;
+        _webPushStartTime = Date.now();
+        _webPushHoursLimit = pushHours;
+
+        webLogMsg('*** Score ' + score.toLocaleString() + ' > threshold \u2014 PUSH w=' + pushBeam.toLocaleString() + ' for ' + pushHours + 'h (~' + estTotalSalts + ' salts) ***', 'yellow');
+        _liveProgress = {};
+        _missionStartTime = Date.now();
+        renderMissionWeb();
+        worker.postMessage({
+            type: 'run', seed: msg.seed, seedId: msg.seedId,
+            salt: 1, beam: pushBeam, threads: 0,
+            phase: 'push', pushSalt: 0, pushTotal: estTotalSalts,
+        });
+        return;
+    }
+
+    if (wasQualify) {
+        qualifiedSeeds.add(seedHex);
+    }
+
+    // Clear state and continue
+    currentSeed = null;
+    currentSeedId = null;
+    _liveProgress = {};
+    _webPushPhase = false;
+
+    if (farming && !stopping) {
+        webUpdateRunnerStatus('FARMING');
+        startNextSeed();
+    } else {
+        farming = false;
+        stopping = false;
+        webUpdateRunnerStatus('STOPPED');
+        renderMissionWeb();
+        releaseWakeLock();
+        webLogMsg('=== FARMING STOPPED ===', 'cyan');
+    }
+    refresh();
+}
+
+// ── Init Worker ──────────────────────────────────────────────────
+function initWorker() {
+    worker = new Worker('worker.js');
+    webLogMsg('Loading WASM engine...');
+
+    worker.onmessage = async (e) => {
+        const msg = e.data;
+        switch (msg.type) {
+            case 'ready':
+                wasmReady = true;
+                webUpdateRunnerStatus('READY');
+                benchmarkData = loadBenchmark();
+                if (benchmarkData) {
+                    _qualifyBeamWidth = benchmarkData.beam;
+                    webLogMsg('Engine loaded \u2014 using saved benchmark (w=' + benchmarkData.beam + ')', 'green');
+                } else {
+                    webLogMsg('Engine loaded \u2014 benchmark needed');
+                }
+                webEnableStart();
+                break;
+
+            case 'benchmark_start':
+                break;
+
+            case 'progress':
+                webHandleProgress(msg);
+                break;
+
+            case 'benchmark_result':
+                benchmarkData = {
+                    beam: msg.calibratedBeam,
+                    elapsed: msg.elapsed,
+                    ts: Date.now(),
+                    cores: navigator.hardwareConcurrency,
+                };
+                saveBenchmark(benchmarkData);
+                _qualifyBeamWidth = msg.calibratedBeam;
+                webLogMsg('Benchmark: w=' + msg.testBeam + ' in ' + msg.elapsed + 's \u2192 calibrated w=' + msg.calibratedBeam, 'green');
+                renderBenchmarkInfoWeb();
+                if (farming) {
+                    startNextSeed();
+                }
+                break;
+
+            case 'result':
+                await webHandleResult(msg);
+                break;
+
+            case 'log':
+                webLogMsg(msg.text);
+                break;
+
+            case 'error':
+                webLogMsg('ERROR: ' + msg.text, 'red');
+                if (farming) {
+                    webLogMsg('Retrying in 10s...', 'yellow');
+                    currentSeed = null;
+                    currentSeedId = null;
+                    _liveProgress = {};
+                    _webPushPhase = false;
+                    setTimeout(() => { if (farming && !stopping) startNextSeed(); }, 10000);
+                }
+                break;
+        }
+    };
+
+    worker.onerror = (e) => {
+        webLogMsg('Worker error: ' + e.message, 'red');
+    };
+}
+
+// ── Init Web Mode ────────────────────────────────────────────────
+if (IS_WEB) {
+    initWorker();
+}
 </script>
 </body>
 </html>

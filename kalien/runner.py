@@ -418,7 +418,8 @@ def main() -> None:
     selected_mode = settings.get("engine_mode") or config.get("selected_mode", "cpu")
     use_cpu = selected_mode == "cpu"
 
-    qualify_beam = args.beam or config["qualify_beam"]
+    # User can override beam widths in settings
+    qualify_beam = args.beam or int(settings.get("qualify_beam", 0)) or config["qualify_beam"]
     push_beam = args.beam or config["push_beam"]
     threads = args.threads or config.get("threads", hw.cpu_cores)
     push_time_est_seconds: float = config.get("push_salt_time_est", 360)
