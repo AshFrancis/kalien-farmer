@@ -245,13 +245,6 @@ def process_one_seed(ctx: RunnerContext) -> bool:
         return True
     ctx.db.record_seed(entry.seed, entry.seed_id)
 
-    # Expiry check
-    rem = ctx.api.seed_remaining_minutes(entry.seed_id)
-    if rem < MIN_REMAINING_HOURS * 60:
-        ctx.log(f"SKIP {entry.seed} — expired ({rem:.0f} min remaining)")
-        ctx.db.update_push(entry.seed, "expired")
-        return True
-
     # Determine phase
     if entry.beam and entry.beam > ctx.qualify_beam:
         phase, beam = "push", entry.beam
@@ -274,6 +267,21 @@ def process_one_seed(ctx: RunnerContext) -> bool:
         except Exception:
             push_hours = DEFAULT_PUSH_HOURS
         time_limit_seconds = push_hours * 3600
+
+    # Expiry check — adapt to phase
+    rem = ctx.api.seed_remaining_minutes(entry.seed_id)
+    if phase == "qualify":
+        # Qualify takes ~9 min — just need 30 min buffer
+        if rem < 30:
+            ctx.log(f"SKIP {entry.seed} — expired ({rem:.0f} min remaining)")
+            return True
+    else:
+        # Push: need enough time for the time limit + buffer
+        needed = (time_limit_seconds / 60) + 30 if time_limit_seconds else MIN_REMAINING_HOURS * 60
+        if rem < needed:
+            ctx.log(f"SKIP {entry.seed} push — not enough time ({rem:.0f} min left, need {needed:.0f})")
+            ctx.db.update_push(entry.seed, "expired")
+            return True
 
     outdir = ctx.paths.base / entry.seed.lower()
     state: dict[str, Any] = {
