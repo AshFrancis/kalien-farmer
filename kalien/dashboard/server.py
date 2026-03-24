@@ -157,10 +157,13 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
 
     def _json(self, data: Any) -> None:
-        self.send_response(200)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(data).encode())
+        try:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(data).encode())
+        except BrokenPipeError:
+            pass
 
 
 # ── Main ──────────────────────────────────────────────────────────────

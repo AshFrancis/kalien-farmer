@@ -152,12 +152,20 @@ def build_api_status(
                     progress["salt_total"] = int(m.group(2))
     except Exception:
         pass
+    # Pass raw status line so the dashboard can distinguish idle states
+    status_text = ""
+    try:
+        if status_path.exists():
+            status_text = status_path.read_text().strip().split()[0]
+    except Exception:
+        pass
     return {
         "state": state,
         "progress": progress,
         "connected": api.is_connected,
         "current_seed_id": api.current_seed_id,
         "queue_length": len(read_queue(queue_path)),
+        "status_text": status_text,
     }
 
 

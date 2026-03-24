@@ -723,13 +723,19 @@ function renderMissionNative(status, runnerStatus) {
 
         d.innerHTML = `w=<span>${(s.beam||0).toLocaleString()}</span> \u00b7 ${saltInfo}${frameInfo} \u00b7 score: <span style="color:var(--green)">${fmtScore(scoreVal)}</span> \u00b7 <span style="color:var(--cyan)">${timer}</span>${etaInfo}`;
     } else if (runnerStatus && runnerStatus.running) {
-        let benchDetail = 'Calibrating optimal beam width for your hardware...';
-        if (p.frame && p.total_frames) {
-            const pct = Math.floor((p.frame / p.total_frames) * 100);
-            benchDetail = `Running test beam \u00b7 frame ${p.frame.toLocaleString()}/${p.total_frames.toLocaleString()} (${pct}%)`;
+        const st = status.status_text || '';
+        if (st === 'idle' || st === 'paused') {
+            m.innerHTML = '<span class="spinner"></span><span style="color:var(--yellow)">\u25b6 WAITING FOR NEW SEED</span>';
+            d.innerHTML = 'Seeds rotate every ~10 min \u00b7 queue: <span>' + status.queue_length + '</span> items';
+        } else {
+            let benchDetail = 'Calibrating optimal beam width for your hardware...';
+            if (p.frame && p.total_frames) {
+                const pct = Math.floor((p.frame / p.total_frames) * 100);
+                benchDetail = `Running test beam \u00b7 frame ${p.frame.toLocaleString()}/${p.total_frames.toLocaleString()} (${pct}%)`;
+            }
+            m.innerHTML = '<span class="spinner"></span><span style="color:var(--cyan)">\u25b6 BENCHMARKING</span>';
+            d.innerHTML = benchDetail;
         }
-        m.innerHTML = '<span class="spinner"></span><span style="color:var(--cyan)">\u25b6 BENCHMARKING</span>';
-        d.innerHTML = benchDetail;
         _missionSeed = null;
     } else {
         m.innerHTML = '<span style="color:var(--dim)">IDLE</span>';

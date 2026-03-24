@@ -179,6 +179,18 @@ def try_resume(ctx: RunnerContext, push_time_est_seconds: float) -> None:
     if not state or not state.get("phase") or not state.get("seed"):
         return
 
+    # Discard stale state (older than 24 hours)
+    started = state.get("started", "")
+    if started:
+        try:
+            age = datetime.now() - datetime.strptime(started, "%Y-%m-%dT%H:%M:%S")
+            if age.total_seconds() > 86400:
+                ctx.log(f"RESUME skipped — {state['seed']} state is stale ({age.days}d old)")
+                clear_state(ctx.paths.state)
+                return
+        except (ValueError, TypeError):
+            pass
+
     # Skip if this seed was already qualified (re-run after dedup fix)
     if state["phase"] == "qualify":
         with ctx.db.connect() as conn:
