@@ -99,6 +99,12 @@ class RunnerContext:
                 time.sleep(5)
             self._paused_duration += time.time() - pause_start
             self.log("RESUMED")
+            # Clean up paused_add.txt — action_resume may have written it,
+            # but we already tracked this pause duration ourselves.
+            try:
+                (self.paths.base / "paused_add.txt").unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 # ── Phase Completion ──────────────────────────────────────────────────

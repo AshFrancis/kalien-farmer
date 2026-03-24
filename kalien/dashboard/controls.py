@@ -6,6 +6,7 @@ import signal
 import subprocess
 import sys
 import threading
+import time
 from typing import TYPE_CHECKING, Any
 
 from kalien.config import IS_WINDOWS, find_engine, ENGINE_SEARCH_PATHS, ensure_data_dir
@@ -265,7 +266,8 @@ def _resume_engine(pid: int) -> bool:
 
 def action_pause(state: DashboardState) -> dict[str, Any]:
     """Pause the engine — suspend the process immediately."""
-    state.paths.pause.touch()
+    # Write pause-start timestamp so action_resume can compute the duration
+    state.paths.pause.write_text(str(time.time()))
     pid = _get_engine_pid(state)
     if pid and _suspend_engine(pid):
         return {"ok": True, "msg": f"Paused engine (PID {pid}) — process suspended"}
@@ -274,6 +276,22 @@ def action_pause(state: DashboardState) -> dict[str, Any]:
 
 def action_resume(state: DashboardState) -> dict[str, Any]:
     """Resume the engine — unsuspend the process."""
+    # Calculate how long the engine was suspended so run_phase can
+    # deduct it from the push time budget.  The runner picks this up
+    # via paused_add.txt before the next time-limit check.
+    try:
+        pause_start = float(state.paths.pause.read_text().strip())
+        paused_secs = time.time() - pause_start
+        add_path = state.paths.base / "paused_add.txt"
+        prior = 0.0
+        if add_path.exists():
+            try:
+                prior = float(add_path.read_text().strip())
+            except (ValueError, OSError):
+                pass
+        add_path.write_text(str(prior + paused_secs))
+    except (ValueError, OSError):
+        pass
     state.paths.pause.unlink(missing_ok=True)
     pid = _get_engine_pid(state)
     if pid and _resume_engine(pid):

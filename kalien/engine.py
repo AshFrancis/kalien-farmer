@@ -122,6 +122,12 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
     outdir = Path(state["outdir"])
     outdir.mkdir(parents=True, exist_ok=True)
 
+    # Capture prior elapsed once at session start so it stays fixed for
+    # the duration of this run_phase call.  session_elapsed (measured from
+    # ctx._phase_start_time) already covers the current session — adding
+    # it to a *growing* state value was double-counting.
+    _session_prior_elapsed: float = state.get("push_elapsed_total", 0)
+
     while state["salt_current"] < state["salt_end"]:
         ctx.check_pause()
 
@@ -214,11 +220,23 @@ def run_phase(state: dict[str, Any], ctx: RunnerContext) -> dict[str, Any]:
                 time_limit = DEFAULT_PUSH_HOURS * 3600
                 state["time_limit"] = time_limit
             if time_limit > 0:
-                # Track cumulative compute time across stop/resume cycles
-                # Subtract any time spent paused (engine suspended)
+                # Pick up any pause duration from dashboard SIGSTOP/SIGCONT
+                # (check_pause only tracks between-salt pauses; mid-salt
+                # suspensions are recorded to this file by action_resume)
+                _paused_add_path = ctx.paths.base / "paused_add.txt"
+                if _paused_add_path.exists():
+                    try:
+                        ctx._paused_duration += float(
+                            _paused_add_path.read_text().strip()
+                        )
+                        _paused_add_path.unlink()
+                    except (ValueError, OSError):
+                        pass
+                # Track cumulative compute time across stop/resume cycles.
+                # _session_prior_elapsed is fixed at session start to avoid
+                # double-counting (session_elapsed already covers this session).
                 session_elapsed = time.time() - ctx._phase_start_time - ctx._paused_duration
-                prior_elapsed = state.get("push_elapsed_total", 0)
-                total_elapsed = prior_elapsed + session_elapsed
+                total_elapsed = _session_prior_elapsed + session_elapsed
                 if total_elapsed >= time_limit:
                     hours = time_limit / 3600
                     ctx.log(
