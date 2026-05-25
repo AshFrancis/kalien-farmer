@@ -1,0 +1,11 @@
+# Weekly grouped dependency PRs. Minor+patch are batched into a single PR
+# so you mostly merge once a week. Majors get individual PRs.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/London
