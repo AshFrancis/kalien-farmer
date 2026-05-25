@@ -1,0 +1,5 @@
+# /api/* proxies through Pages's edge to kalien.xyz (same-origin from the
+# browser's POV → no CORS round-trip). Status 200 = server-side rewrite.
+/api/*  https://kalien.xyz/api/:splat  200
+# SPA-style fallback (single-page web farmer).
+/*      /index.html                    200

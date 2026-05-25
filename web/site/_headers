@@ -1,0 +1,14 @@
+# Cross-origin isolation for SharedArrayBuffer (WASM threads).
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+
+# JS + WASM are cached and same-origin-only resources.
+/*.js
+  Cross-Origin-Resource-Policy: same-origin
+  Cache-Control: public, max-age=86400
+
+/*.wasm
+  Cross-Origin-Resource-Policy: same-origin
+  Cache-Control: public, max-age=86400
+  Content-Type: application/wasm
